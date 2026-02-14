@@ -4,6 +4,7 @@
     "module": "CommonJS",
     "rootDir": "./src",
     "outDir": "./dist",
+    "allowImportingTsExtensions": true,
 
     "strict": true,
     "esModuleInterop": true,
