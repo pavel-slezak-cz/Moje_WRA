@@ -1,0 +1,35 @@
+{
+  "name": "moje_wra",
+  "version": "1.0.0",
+  "description": "WRA feedback questionnaire",
+  "keywords": [
+    "WRA",
+    "feedback"
+  ],
+  "homepage": "https://github.com/pavel-slezak-cz/Moje_WRA#readme",
+  "bugs": {
+    "url": "https://github.com/pavel-slezak-cz/Moje_WRA/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pavel-slezak-cz/Moje_WRA.git"
+  },
+  "license": "ISC",
+  "author": "Pavel Slezak",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo ahoj"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.2",
+    "eslint": "^9.39.2",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.55.0"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix"
+  }
+
+}
