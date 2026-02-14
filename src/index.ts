@@ -1,13 +1,13 @@
-import { healthHandler } from "./routes/health.ts";
-import { feedbackHandler } from "./routes/feedback.ts";
+const http = require("http");
+const { healthHandler } = require("./routes/health");
+const { feedbackHandler } = require("./routes/feedback");
 
-const http = await import("http");
 const PORT = 3000;
 
 const server = http.createServer((req, res) => {
     if (req.url === "/health") {
         healthHandler(req, res);
-    } else if (req.url === "/feedback") {
+    } else if (req.url?.startsWith("/feedback")) {
         feedbackHandler(req, res);
     } else {
         res.writeHead(404, { "Content-Type": "application/json" });
