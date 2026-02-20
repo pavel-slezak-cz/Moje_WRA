@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import prisma from "../config/db";
+import { sendSuccess, sendError } from "../utils/response";
 
 export async function getAll(req: Request, res: Response, next: NextFunction) {
     try {
@@ -7,7 +8,7 @@ export async function getAll(req: Request, res: Response, next: NextFunction) {
             select: { id: true, title: true, description: true, createdAt: true },
             orderBy: { createdAt: "desc" },
         });
-        res.json(questionnaires);
+        sendSuccess(res, questionnaires);
     } catch (err) {
         next(err);
     }
@@ -17,17 +18,17 @@ export async function getById(req: Request, res: Response, next: NextFunction) {
     try {
         const id = parseInt(req.params.id as string, 10);
         if (isNaN(id)) {
-            res.status(400).json({ error: "Invalid questionnaire ID" });
+            sendError(res, "Invalid questionnaire ID", 400, "INVALID_ID");
             return;
         }
 
         const questionnaire = await prisma.questionnaire.findUnique({ where: { id } });
         if (!questionnaire) {
-            res.status(404).json({ error: "Questionnaire not found" });
+            sendError(res, "Questionnaire not found", 404, "NOT_FOUND");
             return;
         }
 
-        res.json(questionnaire);
+        sendSuccess(res, questionnaire);
     } catch (err) {
         next(err);
     }

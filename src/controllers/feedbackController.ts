@@ -1,12 +1,13 @@
 import { Request, Response, NextFunction } from "express";
 import prisma from "../config/db";
 import { submitResponseSchema } from "../middleware/validate";
+import { sendSuccess, sendError } from "../utils/response";
 
 export async function submitResponse(req: Request, res: Response, next: NextFunction) {
     try {
         const questionnaireId = parseInt(req.params.id as string, 10);
         if (isNaN(questionnaireId)) {
-            res.status(400).json({ error: "Invalid questionnaire ID" });
+            sendError(res, "Invalid questionnaire ID", 400, "INVALID_ID");
             return;
         }
 
@@ -15,7 +16,7 @@ export async function submitResponse(req: Request, res: Response, next: NextFunc
         // Verify questionnaire exists
         const questionnaire = await prisma.questionnaire.findUnique({ where: { id: questionnaireId } });
         if (!questionnaire) {
-            res.status(404).json({ error: "Questionnaire not found" });
+            sendError(res, "Questionnaire not found", 404, "NOT_FOUND");
             return;
         }
 
@@ -28,7 +29,7 @@ export async function submitResponse(req: Request, res: Response, next: NextFunc
             },
         });
 
-        res.status(201).json({ message: "Response submitted", response });
+        sendSuccess(res, response, 201);
     } catch (err) {
         next(err);
     }
@@ -44,7 +45,7 @@ export async function getResponses(req: Request, res: Response, next: NextFuncti
             orderBy: { createdAt: "desc" },
         });
 
-        res.json(responses);
+        sendSuccess(res, responses);
     } catch (err) {
         next(err);
     }

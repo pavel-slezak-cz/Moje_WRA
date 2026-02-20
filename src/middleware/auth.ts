@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import { env } from "../config/env";
+import { sendError } from "../utils/response";
 
 export interface AuthPayload {
     userId: number;
@@ -19,7 +20,7 @@ declare global {
 export function authMiddleware(req: Request, res: Response, next: NextFunction) {
     const header = req.headers.authorization;
     if (!header?.startsWith("Bearer ")) {
-        res.status(401).json({ error: "Missing or invalid token" });
+        sendError(res, "Missing or invalid token", 401, "AUTH_REQUIRED");
         return;
     }
 
@@ -29,6 +30,6 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction) 
         req.user = payload;
         next();
     } catch {
-        res.status(401).json({ error: "Invalid or expired token" });
+        sendError(res, "Invalid or expired token", 401, "TOKEN_INVALID");
     }
 }

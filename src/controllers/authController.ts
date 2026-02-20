@@ -4,6 +4,7 @@ import prisma from "../config/db";
 import { env } from "../config/env";
 import { hashPassword, comparePassword } from "../utils/hash";
 import { registerSchema, loginSchema } from "../middleware/validate";
+import { sendSuccess, sendError } from "../utils/response";
 
 function signToken(userId: number, email: string): string {
     return jwt.sign({ userId, email }, env.JWT_SECRET, { expiresIn: "7d" });
@@ -15,7 +16,7 @@ export async function register(req: Request, res: Response, next: NextFunction) 
 
         const existing = await prisma.user.findUnique({ where: { email: data.email } });
         if (existing) {
-            res.status(409).json({ error: "Email already registered" });
+            sendError(res, "Email already registered", 409, "DUPLICATE_EMAIL");
             return;
         }
 
@@ -29,7 +30,7 @@ export async function register(req: Request, res: Response, next: NextFunction) 
         });
 
         const token = signToken(user.id, user.email);
-        res.status(201).json({ token, user: { id: user.id, email: user.email, name: user.name } });
+        sendSuccess(res, { token, user: { id: user.id, email: user.email, name: user.name } }, 201);
     } catch (err) {
         next(err);
     }
@@ -41,18 +42,18 @@ export async function login(req: Request, res: Response, next: NextFunction) {
 
         const user = await prisma.user.findUnique({ where: { email: data.email } });
         if (!user) {
-            res.status(401).json({ error: "Invalid credentials" });
+            sendError(res, "Invalid credentials", 401, "INVALID_CREDENTIALS");
             return;
         }
 
         const valid = await comparePassword(data.password, user.passwordHash);
         if (!valid) {
-            res.status(401).json({ error: "Invalid credentials" });
+            sendError(res, "Invalid credentials", 401, "INVALID_CREDENTIALS");
             return;
         }
 
         const token = signToken(user.id, user.email);
-        res.json({ token, user: { id: user.id, email: user.email, name: user.name } });
+        sendSuccess(res, { token, user: { id: user.id, email: user.email, name: user.name } });
     } catch (err) {
         next(err);
     }

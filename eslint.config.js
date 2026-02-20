@@ -13,6 +13,6 @@ export default [
         },
     },
     {
-        ignores: ["node_modules", "dist", "src/generated", "prisma.config.ts"],
+        ignores: ["node_modules", "dist", "src/generated", "prisma.config.ts", "prisma/seed.ts"],
     },
 ];
