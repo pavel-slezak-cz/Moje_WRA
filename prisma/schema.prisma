@@ -1,0 +1,46 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+model User {
+  id           Int        @id @default(autoincrement())
+  email        String     @unique
+  passwordHash String     @map("password_hash")
+  name         String
+  createdAt    DateTime   @default(now()) @map("created_at")
+
+  responses Response[]
+
+  @@map("users")
+}
+
+model Questionnaire {
+  id          Int        @id @default(autoincrement())
+  title       String
+  description String?
+  questions   Json       // array of { id, text, type, options? }
+  createdAt   DateTime   @default(now()) @map("created_at")
+
+  responses Response[]
+
+  @@map("questionnaires")
+}
+
+model Response {
+  id               Int           @id @default(autoincrement())
+  userId           Int           @map("user_id")
+  questionnaireId  Int           @map("questionnaire_id")
+  answers          Json          // { questionId: answer }
+  createdAt        DateTime      @default(now()) @map("created_at")
+
+  user             User          @relation(fields: [userId], references: [id])
+  questionnaire    Questionnaire @relation(fields: [questionnaireId], references: [id])
+
+  @@map("responses")
+}
