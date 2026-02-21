@@ -1,13 +1,15 @@
 import "dotenv/config";
 import { PrismaMariaDb } from "@prisma/adapter-mariadb";
 import { PrismaClient } from "../src/generated/prisma/client";
+import { ScaleType } from "../src/generated/prisma/enums";
 import bcrypt from "bcrypt";
 
 const adapter = new PrismaMariaDb(process.env.DATABASE_URL!);
 const prisma = new PrismaClient({ adapter });
 
 async function main() {
-    // --- Create sample users ---
+    // ── Users ──
+
     const users = [
         { email: "alice@example.com", password: "password123", name: "Alice" },
         { email: "bob@example.com", password: "password123", name: "Bob" },
@@ -18,49 +20,85 @@ async function main() {
         await prisma.user.upsert({
             where: { email: u.email },
             update: {},
-            create: {
-                email: u.email,
-                passwordHash: hashed,
-                name: u.name,
-            },
+            create: { email: u.email, passwordHash: hashed, name: u.name },
         });
     }
+    console.log("Users seeded.");
 
-    console.log("Sample users created.");
+    // ── Legacy questionnaires (backward compat) ──
 
-    // --- Create sample questionnaires ---
-    const questionnaires = [
-        {
-            title: "Product Feedback",
-            description: "Tell us what you think about our product",
-            questions: [
-                { id: 1, question: "How do you rate our product?", type: "rating" },
-                { id: 2, question: "Any suggestions for improvement?", type: "text" },
-            ],
-        },
-        {
-            title: "Website Feedback",
-            description: "Help us improve our website",
-            questions: [
-                { id: 1, question: "Is the website easy to navigate?", type: "rating" },
-                { id: 2, question: "What did you like most?", type: "text" },
-            ],
-        },
+    for (const q of [
+        { title: "Product Feedback", description: "Tell us about our product", questions: [{ id: 1, question: "Rate our product", type: "rating" }] },
+        { title: "Website Feedback", description: "Help us improve", questions: [{ id: 1, question: "Easy to navigate?", type: "rating" }] },
+    ]) {
+        await prisma.questionnaire.upsert({ where: { title: q.title }, update: {}, create: q });
+    }
+    console.log("Legacy questionnaires seeded.");
+
+    // ── Constructs ──
+
+    const constructData = [
+        { name: "Work Engagement", description: "Level of engagement and involvement in work" },
+        { name: "Job Satisfaction", description: "Overall satisfaction with one's job" },
+        { name: "Work-Life Balance", description: "Perceived balance between work and personal life" },
     ];
 
-    for (const q of questionnaires) {
-        await prisma.questionnaire.upsert({
-            where: { title: q.title },
+    const constructs: Record<string, { id: number }> = {};
+    for (const c of constructData) {
+        const record = await prisma.construct.upsert({
+            where: { name: c.name },
             update: {},
-            create: {
-                title: q.title,
-                description: q.description,
-                questions: q.questions,
-            },
+            create: c,
+        });
+        constructs[c.name] = record;
+    }
+    console.log("Constructs seeded.");
+
+    // ── Instrument: WRA ──
+
+    const instrument = await prisma.instrument.upsert({
+        where: { name: "WRA" },
+        update: {},
+        create: { name: "WRA", description: "Work Readiness Assessment" },
+    });
+
+    // Check if version already exists
+    let version = await prisma.instrumentVersion.findUnique({
+        where: { instrumentId_versionNumber: { instrumentId: instrument.id, versionNumber: "1.0" } },
+    });
+
+    if (!version) {
+        version = await prisma.instrumentVersion.create({
+            data: { instrumentId: instrument.id, versionNumber: "1.0", isActive: true },
+        });
+
+        // ── Items ──
+        const items = [
+            // Work Engagement
+            { constructName: "Work Engagement", text: "I feel energized when I work.", scaleType: ScaleType.LIKERT_5, reverseScored: false, position: 1 },
+            { constructName: "Work Engagement", text: "I find it difficult to focus on my tasks.", scaleType: ScaleType.LIKERT_5, reverseScored: true, position: 2 },
+            { constructName: "Work Engagement", text: "I am enthusiastic about my job.", scaleType: ScaleType.LIKERT_5, reverseScored: false, position: 3 },
+            // Job Satisfaction
+            { constructName: "Job Satisfaction", text: "I am satisfied with my current role.", scaleType: ScaleType.LIKERT_5, reverseScored: false, position: 4 },
+            { constructName: "Job Satisfaction", text: "I often think about leaving my job.", scaleType: ScaleType.LIKERT_5, reverseScored: true, position: 5 },
+            // Work-Life Balance
+            { constructName: "Work-Life Balance", text: "I have enough time for personal activities outside work.", scaleType: ScaleType.LIKERT_5, reverseScored: false, position: 6 },
+            { constructName: "Work-Life Balance", text: "Work demands frequently interfere with my personal life.", scaleType: ScaleType.LIKERT_5, reverseScored: true, position: 7 },
+        ];
+
+        await prisma.item.createMany({
+            data: items.map((i) => ({
+                instrumentVersionId: version!.id,
+                constructId: constructs[i.constructName].id,
+                text: i.text,
+                scaleType: i.scaleType,
+                reverseScored: i.reverseScored,
+                position: i.position,
+            })),
         });
     }
 
-    console.log("Sample questionnaires created.");
+    console.log("WRA instrument v1.0 seeded.");
 }
 
 main()

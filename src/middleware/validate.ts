@@ -19,6 +19,13 @@ export const submitResponseSchema = z.object({
     answers: z.record(z.string(), z.unknown()),
 });
 
+export const submitInstrumentResponseSchema = z.object({
+    items: z.array(z.object({
+        itemId: z.number().int().positive("Item ID must be a positive integer"),
+        value: z.number().int("Value must be an integer"),
+    })).min(1, "At least one item response is required"),
+});
+
 // ── Generic validation middleware ──
 
 export function validate(schema: z.ZodSchema) {
