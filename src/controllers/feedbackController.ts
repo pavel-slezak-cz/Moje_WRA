@@ -36,30 +36,27 @@ export async function submitResponse(req: Request, res: Response, next: NextFunc
     }
 }
 
-// ── New (instrument-based, granular) ──
+// ── Project-scoped (instrument-based, granular) ──
 
-export async function submitInstrumentResponse(req: Request, res: Response, next: NextFunction) {
+export async function submitProjectResponse(req: Request, res: Response, next: NextFunction) {
     try {
-        const instrumentId = parseInt(req.params.id as string, 10);
-        if (isNaN(instrumentId)) {
-            sendError(res, "Invalid instrument ID", 400, "INVALID_ID");
-            return;
-        }
-
+        const projectId = req.projectParticipant!.projectId;
         const data = submitInstrumentResponseSchema.parse(req.body);
 
-        // Find active version for this instrument
-        const version = await prisma.instrumentVersion.findFirst({
-            where: { instrumentId, isActive: true },
-            include: { items: { select: { id: true } } },
+        // Load project's instrument version + its items
+        const project = await prisma.project.findUnique({
+            where: { id: projectId },
+            include: {
+                instrumentVersion: { include: { items: { select: { id: true } } } },
+            },
         });
-        if (!version) {
-            sendError(res, "No active version found for this instrument", 404, "NOT_FOUND");
+        if (!project) {
+            sendError(res, "Project not found", 404, "NOT_FOUND");
             return;
         }
 
         // Validate that all submitted itemIds belong to this version
-        const validItemIds = new Set(version.items.map((i) => i.id));
+        const validItemIds = new Set(project.instrumentVersion.items.map((i) => i.id));
         const invalidItems = data.items.filter((i) => !validItemIds.has(i.itemId));
         if (invalidItems.length > 0) {
             sendError(res, "Some item IDs do not belong to this instrument version", 400, "INVALID_ITEMS",
@@ -72,7 +69,8 @@ export async function submitInstrumentResponse(req: Request, res: Response, next
             const resp = await tx.instrumentResponse.create({
                 data: {
                     userId: req.user!.userId,
-                    instrumentVersionId: version.id,
+                    instrumentVersionId: project.instrumentVersionId,
+                    projectId,
                 },
             });
 
@@ -96,18 +94,19 @@ export async function submitInstrumentResponse(req: Request, res: Response, next
     }
 }
 
-export async function getResponses(req: Request, res: Response, next: NextFunction) {
+export async function getProjectResponses(req: Request, res: Response, next: NextFunction) {
     try {
+        const { projectId, userId, role } = req.projectParticipant!;
+
+        // OWNER/ADMIN see all responses; PARTICIPANT sees only own
+        const whereClause = role === "PARTICIPANT"
+            ? { projectId, userId }
+            : { projectId };
+
         const responses = await prisma.instrumentResponse.findMany({
-            where: { userId: req.user!.userId },
+            where: whereClause,
             include: {
-                instrumentVersion: {
-                    select: {
-                        id: true,
-                        versionNumber: true,
-                        instrument: { select: { id: true, name: true } },
-                    },
-                },
+                user: { select: { id: true, name: true, email: true } },
                 items: {
                     include: {
                         item: {

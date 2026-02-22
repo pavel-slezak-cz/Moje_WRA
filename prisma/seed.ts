@@ -99,6 +99,36 @@ async function main() {
     }
 
     console.log("WRA instrument v1.0 seeded.");
+
+    // ── Sample project ──
+
+    const alice = await prisma.user.findUnique({ where: { email: "alice@example.com" } });
+    const bob = await prisma.user.findUnique({ where: { email: "bob@example.com" } });
+
+    if (alice && bob && version) {
+        const existingProject = await prisma.project.findUnique({ where: { name: "WRA Pilot Q1 2026" } });
+        if (!existingProject) {
+            const project = await prisma.project.create({
+                data: {
+                    name: "WRA Pilot Q1 2026",
+                    description: "Pilot deployment of WRA for Q1 2026",
+                    ownerUserId: alice.id,
+                    instrumentVersionId: version.id,
+                },
+            });
+
+            await prisma.projectParticipant.createMany({
+                data: [
+                    { projectId: project.id, userId: alice.id, role: "OWNER" },
+                    { projectId: project.id, userId: bob.id, role: "PARTICIPANT" },
+                ],
+            });
+
+            console.log("Sample project seeded.");
+        } else {
+            console.log("Sample project already exists.");
+        }
+    }
 }
 
 main()

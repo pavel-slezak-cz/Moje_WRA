@@ -17,6 +17,12 @@ enum ScaleType {
   YES_NO
 }
 
+enum ProjectRole {
+  OWNER
+  ADMIN
+  PARTICIPANT
+}
+
 // ── Core user model ──
 
 model User {
@@ -26,8 +32,10 @@ model User {
   name         String
   createdAt    DateTime           @default(now()) @map("created_at")
 
-  legacyResponses    LegacyResponse[]
+  legacyResponses     LegacyResponse[]
   instrumentResponses InstrumentResponse[]
+  ownedProjects       Project[]              @relation("ProjectOwner")
+  participations      ProjectParticipant[]
 
   @@map("users")
 }
@@ -82,6 +90,7 @@ model InstrumentVersion {
   instrument Instrument           @relation(fields: [instrumentId], references: [id])
   items      Item[]
   responses  InstrumentResponse[]
+  projects   Project[]
 
   @@unique([instrumentId, versionNumber])
   @@map("instrument_versions")
@@ -117,13 +126,47 @@ model InstrumentResponse {
   id                  Int              @id @default(autoincrement())
   userId              Int              @map("user_id")
   instrumentVersionId Int              @map("instrument_version_id")
+  projectId           Int              @map("project_id")
   createdAt           DateTime         @default(now()) @map("created_at")
 
   user              User              @relation(fields: [userId], references: [id])
   instrumentVersion InstrumentVersion @relation(fields: [instrumentVersionId], references: [id])
+  project           Project           @relation(fields: [projectId], references: [id])
   items             ResponseItem[]
 
   @@map("instrument_responses")
+}
+
+// ── Project models ──
+
+model Project {
+  id                  Int              @id @default(autoincrement())
+  name                String           @unique
+  description         String?
+  ownerUserId         Int              @map("owner_user_id")
+  instrumentVersionId Int              @map("instrument_version_id")
+  createdAt           DateTime         @default(now()) @map("created_at")
+
+  owner             User                @relation("ProjectOwner", fields: [ownerUserId], references: [id])
+  instrumentVersion InstrumentVersion   @relation(fields: [instrumentVersionId], references: [id])
+  participants      ProjectParticipant[]
+  responses         InstrumentResponse[]
+
+  @@map("projects")
+}
+
+model ProjectParticipant {
+  id        Int         @id @default(autoincrement())
+  projectId Int         @map("project_id")
+  userId    Int         @map("user_id")
+  role      ProjectRole @default(PARTICIPANT)
+  joinedAt  DateTime    @default(now()) @map("joined_at")
+
+  project Project @relation(fields: [projectId], references: [id])
+  user    User    @relation(fields: [userId], references: [id])
+
+  @@unique([projectId, userId])
+  @@map("project_participants")
 }
 
 model ResponseItem {

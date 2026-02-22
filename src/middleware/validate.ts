@@ -26,6 +26,17 @@ export const submitInstrumentResponseSchema = z.object({
     })).min(1, "At least one item response is required"),
 });
 
+export const createProjectSchema = z.object({
+    name: z.string().min(1, "Project name is required"),
+    description: z.string().optional(),
+    instrumentVersionId: z.number().int().positive("Instrument version ID is required"),
+});
+
+export const addParticipantSchema = z.object({
+    userId: z.number().int().positive("User ID is required"),
+    role: z.enum(["ADMIN", "PARTICIPANT"]).optional(),
+});
+
 // ── Generic validation middleware ──
 
 export function validate(schema: z.ZodSchema) {
