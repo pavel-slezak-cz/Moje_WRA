@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from "express";
 import prisma from "../config/db";
 import { submitResponseSchema, submitInstrumentResponseSchema } from "../middleware/validate";
 import { sendSuccess, sendError } from "../utils/response";
+import { scoreResponse } from "../services/scoringService";
 
 // ── Legacy (questionnaire-based) ──
 
@@ -43,11 +44,24 @@ export async function submitProjectResponse(req: Request, res: Response, next: N
         const projectId = req.projectParticipant!.projectId;
         const data = submitInstrumentResponseSchema.parse(req.body);
 
-        // Load project's instrument version + its items
+        // Load project's instrument version + its items (with scoring metadata)
         const project = await prisma.project.findUnique({
             where: { id: projectId },
             include: {
-                instrumentVersion: { include: { items: { select: { id: true } } } },
+                instrumentVersion: {
+                    include: {
+                        items: {
+                            select: {
+                                id: true,
+                                constructId: true,
+                                scaleType: true,
+                                reverseScored: true,
+                                measurementType: true,
+                                gapGroupId: true,
+                            },
+                        },
+                    },
+                },
             },
         });
         if (!project) {
@@ -64,7 +78,7 @@ export async function submitProjectResponse(req: Request, res: Response, next: N
             return;
         }
 
-        // Create response + response items in a transaction
+        // Create response + response items + scores in a transaction
         const response = await prisma.$transaction(async (tx) => {
             const resp = await tx.instrumentResponse.create({
                 data: {
@@ -82,9 +96,22 @@ export async function submitProjectResponse(req: Request, res: Response, next: N
                 })),
             });
 
+            // Score the response (item scores, construct scores, global score)
+            await scoreResponse(
+                tx,
+                resp.id,
+                project.instrumentVersion.items,
+                data.items,
+            );
+
             return tx.instrumentResponse.findUnique({
                 where: { id: resp.id },
-                include: { items: true },
+                include: {
+                    items: true,
+                    itemScores: true,
+                    constructScores: { include: { construct: { select: { name: true } } } },
+                    globalScore: true,
+                },
             });
         });
 
@@ -114,6 +141,8 @@ export async function getProjectResponses(req: Request, res: Response, next: Nex
                         },
                     },
                 },
+                constructScores: { include: { construct: { select: { name: true } } } },
+                globalScore: true,
             },
             orderBy: { createdAt: "desc" },
         });

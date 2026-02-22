@@ -17,6 +17,11 @@ enum ScaleType {
   YES_NO
 }
 
+enum MeasurementType {
+  SOURCE
+  TARGET
+}
+
 enum ProjectRole {
   OWNER
   ADMIN
@@ -101,7 +106,8 @@ model Construct {
   name        String  @unique
   description String?
 
-  items Item[]
+  items           Item[]
+  constructScores ConstructScore[]
 
   @@map("constructs")
 }
@@ -113,11 +119,14 @@ model Item {
   text                String           @db.Text
   scaleType           ScaleType        @default(LIKERT_5) @map("scale_type")
   reverseScored       Boolean          @default(false) @map("reverse_scored")
+  measurementType     MeasurementType  @default(SOURCE) @map("measurement_type")
+  gapGroupId          String?          @map("gap_group_id")
   position            Int
 
   instrumentVersion InstrumentVersion @relation(fields: [instrumentVersionId], references: [id])
   construct         Construct         @relation(fields: [constructId], references: [id])
   responseItems     ResponseItem[]
+  itemScores        ItemScore[]
 
   @@map("items")
 }
@@ -133,6 +142,9 @@ model InstrumentResponse {
   instrumentVersion InstrumentVersion @relation(fields: [instrumentVersionId], references: [id])
   project           Project           @relation(fields: [projectId], references: [id])
   items             ResponseItem[]
+  itemScores        ItemScore[]
+  constructScores   ConstructScore[]
+  globalScore       GlobalScore?
 
   @@map("instrument_responses")
 }
@@ -180,4 +192,52 @@ model ResponseItem {
 
   @@unique([responseId, itemId])
   @@map("response_items")
+}
+
+// ── Score models ──
+
+model ItemScore {
+  id          Int  @id @default(autoincrement())
+  responseId  Int  @map("response_id")
+  itemId      Int  @map("item_id")
+  sourceValue Int? @map("source_value")
+  targetValue Int? @map("target_value")
+  gapValue    Int? @map("gap_value")
+
+  response InstrumentResponse @relation(fields: [responseId], references: [id])
+  item     Item               @relation(fields: [itemId], references: [id])
+
+  @@unique([responseId, itemId])
+  @@map("item_scores")
+}
+
+model ConstructScore {
+  id                  Int      @id @default(autoincrement())
+  responseId          Int      @map("response_id")
+  constructId         Int      @map("construct_id")
+  sourceMean          Float?   @map("source_mean")
+  targetMean          Float?   @map("target_mean")
+  gapMean             Float?   @map("gap_mean")
+  scoringModelVersion String   @default("1.0") @map("scoring_model_version")
+  computedAt          DateTime @default(now()) @map("computed_at")
+
+  response  InstrumentResponse @relation(fields: [responseId], references: [id])
+  construct Construct          @relation(fields: [constructId], references: [id])
+
+  @@unique([responseId, constructId])
+  @@map("construct_scores")
+}
+
+model GlobalScore {
+  id                  Int      @id @default(autoincrement())
+  responseId          Int      @unique @map("response_id")
+  globalSourceMean    Float?   @map("global_source_mean")
+  globalTargetMean    Float?   @map("global_target_mean")
+  globalGapMean       Float?   @map("global_gap_mean")
+  scoringModelVersion String   @default("1.0") @map("scoring_model_version")
+  computedAt          DateTime @default(now()) @map("computed_at")
+
+  response InstrumentResponse @relation(fields: [responseId], references: [id])
+
+  @@map("global_scores")
 }

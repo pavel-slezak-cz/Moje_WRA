@@ -1,7 +1,7 @@
 import "dotenv/config";
 import { PrismaMariaDb } from "@prisma/adapter-mariadb";
 import { PrismaClient } from "../src/generated/prisma/client";
-import { ScaleType } from "../src/generated/prisma/enums";
+import { ScaleType, MeasurementType } from "../src/generated/prisma/enums";
 import bcrypt from "bcrypt";
 
 const adapter = new PrismaMariaDb(process.env.DATABASE_URL!);
@@ -72,18 +72,23 @@ async function main() {
             data: { instrumentId: instrument.id, versionNumber: "1.0", isActive: true },
         });
 
-        // ── Items ──
+        // ── Items (SOURCE/TARGET pairs + standalone SOURCE items) ──
         const items = [
-            // Work Engagement
-            { constructName: "Work Engagement", text: "I feel energized when I work.", scaleType: ScaleType.LIKERT_5, reverseScored: false, position: 1 },
-            { constructName: "Work Engagement", text: "I find it difficult to focus on my tasks.", scaleType: ScaleType.LIKERT_5, reverseScored: true, position: 2 },
-            { constructName: "Work Engagement", text: "I am enthusiastic about my job.", scaleType: ScaleType.LIKERT_5, reverseScored: false, position: 3 },
-            // Job Satisfaction
-            { constructName: "Job Satisfaction", text: "I am satisfied with my current role.", scaleType: ScaleType.LIKERT_5, reverseScored: false, position: 4 },
-            { constructName: "Job Satisfaction", text: "I often think about leaving my job.", scaleType: ScaleType.LIKERT_5, reverseScored: true, position: 5 },
-            // Work-Life Balance
-            { constructName: "Work-Life Balance", text: "I have enough time for personal activities outside work.", scaleType: ScaleType.LIKERT_5, reverseScored: false, position: 6 },
-            { constructName: "Work-Life Balance", text: "Work demands frequently interfere with my personal life.", scaleType: ScaleType.LIKERT_5, reverseScored: true, position: 7 },
+            // Work Engagement – paired (WE1)
+            { constructName: "Work Engagement", text: "I feel energized when I work.", scaleType: ScaleType.LIKERT_5, reverseScored: false, measurementType: MeasurementType.SOURCE, gapGroupId: "WE1", position: 1 },
+            { constructName: "Work Engagement", text: "I want to feel more energized at work.", scaleType: ScaleType.LIKERT_5, reverseScored: false, measurementType: MeasurementType.TARGET, gapGroupId: "WE1", position: 2 },
+            // Work Engagement – standalone SOURCE (reverse scored, no pair)
+            { constructName: "Work Engagement", text: "I find it difficult to focus on my tasks.", scaleType: ScaleType.LIKERT_5, reverseScored: true, measurementType: MeasurementType.SOURCE, gapGroupId: null, position: 3 },
+            // Job Satisfaction – paired (JS1)
+            { constructName: "Job Satisfaction", text: "I am satisfied with my current role.", scaleType: ScaleType.LIKERT_5, reverseScored: false, measurementType: MeasurementType.SOURCE, gapGroupId: "JS1", position: 4 },
+            { constructName: "Job Satisfaction", text: "I want to be more satisfied with my role.", scaleType: ScaleType.LIKERT_5, reverseScored: false, measurementType: MeasurementType.TARGET, gapGroupId: "JS1", position: 5 },
+            // Job Satisfaction – standalone SOURCE (reverse scored, no pair)
+            { constructName: "Job Satisfaction", text: "I often think about leaving my job.", scaleType: ScaleType.LIKERT_5, reverseScored: true, measurementType: MeasurementType.SOURCE, gapGroupId: null, position: 6 },
+            // Work-Life Balance – paired (WLB1)
+            { constructName: "Work-Life Balance", text: "I have enough time for personal activities outside work.", scaleType: ScaleType.LIKERT_5, reverseScored: false, measurementType: MeasurementType.SOURCE, gapGroupId: "WLB1", position: 7 },
+            { constructName: "Work-Life Balance", text: "I want more time for personal activities.", scaleType: ScaleType.LIKERT_5, reverseScored: false, measurementType: MeasurementType.TARGET, gapGroupId: "WLB1", position: 8 },
+            // Work-Life Balance – standalone SOURCE (reverse scored, no pair)
+            { constructName: "Work-Life Balance", text: "Work demands frequently interfere with my personal life.", scaleType: ScaleType.LIKERT_5, reverseScored: true, measurementType: MeasurementType.SOURCE, gapGroupId: null, position: 9 },
         ];
 
         await prisma.item.createMany({
@@ -93,6 +98,8 @@ async function main() {
                 text: i.text,
                 scaleType: i.scaleType,
                 reverseScored: i.reverseScored,
+                measurementType: i.measurementType,
+                gapGroupId: i.gapGroupId,
                 position: i.position,
             })),
         });
