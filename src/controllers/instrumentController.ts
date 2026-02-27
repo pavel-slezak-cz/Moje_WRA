@@ -12,7 +12,7 @@ export async function getAll(_req: Request, res: Response, next: NextFunction) {
                 createdAt: true,
                 versions: {
                     where: { isActive: true },
-                    select: { id: true, versionNumber: true },
+                    select: { id: true, versionNumber: true, scoringStrategy: true },
                 },
             },
             orderBy: { name: "asc" },

@@ -58,6 +58,7 @@ export async function submitProjectResponse(req: Request, res: Response, next: N
                                 reverseScored: true,
                                 measurementType: true,
                                 gapGroupId: true,
+                                behaviorPolarity: true,
                             },
                         },
                     },
@@ -100,6 +101,7 @@ export async function submitProjectResponse(req: Request, res: Response, next: N
             await scoreResponse(
                 tx,
                 resp.id,
+                project.instrumentVersion.scoringStrategy,
                 project.instrumentVersion.items,
                 data.items,
             );

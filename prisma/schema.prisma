@@ -22,6 +22,16 @@ enum MeasurementType {
   TARGET
 }
 
+enum ScoringStrategy {
+  WRA_ABSOLUTE_GAP
+  NORMATIVE_360
+}
+
+enum BehaviorPolarity {
+  POSITIVE
+  NEGATIVE
+}
+
 enum ProjectRole {
   OWNER
   ADMIN
@@ -86,11 +96,12 @@ model Instrument {
 }
 
 model InstrumentVersion {
-  id            Int      @id @default(autoincrement())
-  instrumentId  Int      @map("instrument_id")
-  versionNumber String   @map("version_number")
-  isActive      Boolean  @default(true) @map("is_active")
-  createdAt     DateTime @default(now()) @map("created_at")
+  id              Int             @id @default(autoincrement())
+  instrumentId    Int             @map("instrument_id")
+  versionNumber   String          @map("version_number")
+  scoringStrategy ScoringStrategy @default(WRA_ABSOLUTE_GAP) @map("scoring_strategy")
+  isActive        Boolean         @default(true) @map("is_active")
+  createdAt       DateTime        @default(now()) @map("created_at")
 
   instrument Instrument           @relation(fields: [instrumentId], references: [id])
   items      Item[]
@@ -113,14 +124,15 @@ model Construct {
 }
 
 model Item {
-  id                  Int              @id @default(autoincrement())
-  instrumentVersionId Int              @map("instrument_version_id")
-  constructId         Int              @map("construct_id")
-  text                String           @db.Text
-  scaleType           ScaleType        @default(LIKERT_5) @map("scale_type")
-  reverseScored       Boolean          @default(false) @map("reverse_scored")
-  measurementType     MeasurementType  @default(SOURCE) @map("measurement_type")
-  gapGroupId          String?          @map("gap_group_id")
+  id                  Int               @id @default(autoincrement())
+  instrumentVersionId Int               @map("instrument_version_id")
+  constructId         Int               @map("construct_id")
+  text                String            @db.Text
+  scaleType           ScaleType         @default(LIKERT_5) @map("scale_type")
+  reverseScored       Boolean           @default(false) @map("reverse_scored")
+  measurementType     MeasurementType   @default(SOURCE) @map("measurement_type")
+  gapGroupId          String?           @map("gap_group_id")
+  behaviorPolarity    BehaviorPolarity? @map("behavior_polarity")
   position            Int
 
   instrumentVersion InstrumentVersion @relation(fields: [instrumentVersionId], references: [id])
@@ -197,12 +209,13 @@ model ResponseItem {
 // ── Score models ──
 
 model ItemScore {
-  id          Int  @id @default(autoincrement())
-  responseId  Int  @map("response_id")
-  itemId      Int  @map("item_id")
-  sourceValue Int? @map("source_value")
-  targetValue Int? @map("target_value")
-  gapValue    Int? @map("gap_value")
+  id               Int    @id @default(autoincrement())
+  responseId       Int    @map("response_id")
+  itemId           Int    @map("item_id")
+  sourceValue      Int?   @map("source_value")
+  targetValue      Int?   @map("target_value")
+  gapValue         Float? @map("gap_value")
+  absoluteGapValue Float? @map("absolute_gap_value")
 
   response InstrumentResponse @relation(fields: [responseId], references: [id])
   item     Item               @relation(fields: [itemId], references: [id])
@@ -218,6 +231,7 @@ model ConstructScore {
   sourceMean          Float?   @map("source_mean")
   targetMean          Float?   @map("target_mean")
   gapMean             Float?   @map("gap_mean")
+  meanAbsoluteGap     Float?   @map("mean_absolute_gap")
   scoringModelVersion String   @default("1.0") @map("scoring_model_version")
   computedAt          DateTime @default(now()) @map("computed_at")
 
@@ -229,13 +243,14 @@ model ConstructScore {
 }
 
 model GlobalScore {
-  id                  Int      @id @default(autoincrement())
-  responseId          Int      @unique @map("response_id")
-  globalSourceMean    Float?   @map("global_source_mean")
-  globalTargetMean    Float?   @map("global_target_mean")
-  globalGapMean       Float?   @map("global_gap_mean")
-  scoringModelVersion String   @default("1.0") @map("scoring_model_version")
-  computedAt          DateTime @default(now()) @map("computed_at")
+  id                    Int      @id @default(autoincrement())
+  responseId            Int      @unique @map("response_id")
+  globalSourceMean      Float?   @map("global_source_mean")
+  globalTargetMean      Float?   @map("global_target_mean")
+  globalGapMean         Float?   @map("global_gap_mean")
+  globalMeanAbsoluteGap Float?   @map("global_mean_absolute_gap")
+  scoringModelVersion   String   @default("1.0") @map("scoring_model_version")
+  computedAt            DateTime @default(now()) @map("computed_at")
 
   response InstrumentResponse @relation(fields: [responseId], references: [id])
 
