@@ -22,7 +22,10 @@
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
     "lint": "eslint .",
-    "lint:fix": "eslint . --fix"
+    "lint:fix": "eslint . --fix",
+    "dev:sandbox": "dotenv -e .env.sandbox -- tsx src/index.ts",
+    "migrate:sandbox": "dotenv -e .env.sandbox -- prisma migrate dev",
+    "seed:sandbox": "dotenv -e .env.sandbox -- prisma db seed"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.2",
@@ -31,6 +34,7 @@
     "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^25.3.0",
+    "dotenv-cli": "^11.0.0",
     "eslint": "^9.39.2",
     "prisma": "^7.4.1",
     "ts-node": "^10.9.2",

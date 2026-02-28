@@ -1,0 +1,444 @@
+import { useState } from "react";
+
+const API = "http://localhost:3001";
+
+const api = (path: string, token?: string, body?: unknown) =>
+    fetch(`${API}${path}`, {
+        method: body ? "POST" : "GET",
+        headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: body ? JSON.stringify(body) : undefined,
+    }).then((r) => r.json());
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+type Any = any;
+
+export default function App() {
+    const [token, setToken] = useState("");
+    const [error, setError] = useState("");
+    const [email, setEmail] = useState("pavel@test.cz");
+    const [password, setPassword] = useState("heslo");
+
+    const [projects, setProjects] = useState<Any[]>([]);
+    const [project, setProject] = useState<Any>(null);
+    const [instrument, setInstrument] = useState<Any>(null);
+    const [strategy, setStrategy] = useState("");
+
+    // Questionnaire state
+    const [currentIndex, setCurrentIndex] = useState(0);
+    const [wraAnswers, setWraAnswers] = useState<Record<number, { source?: number; target?: number }>>({});
+    const [answers360, setAnswers360] = useState<Record<number, number>>({});
+
+    const [result, setResult] = useState<Any>(null);
+
+    // ── Login ──
+    async function login() {
+        setError("");
+        const res = await api("/auth/login", undefined, { email, password });
+        if (!res.success) return setError(res.error.message);
+        setToken(res.data.token);
+        const pRes = await api("/projects", res.data.token);
+        if (pRes.success) setProjects(pRes.data);
+    }
+
+    // ── Select project → load instrument ──
+    async function selectProject(p: Any) {
+        setProject(p);
+        setResult(null);
+        setWraAnswers({});
+        setAnswers360({});
+        setCurrentIndex(0);
+        setStrategy("");
+
+        const res = await api(`/projects/${p.id}`, token);
+        if (!res.success) return;
+        const ivId = res.data.instrumentVersionId;
+
+        const instrRes = await api("/instruments", token);
+        if (!instrRes.success) return;
+
+        for (const inst of instrRes.data) {
+            const ver = inst.versions?.find((v: Any) => v.id === ivId);
+            if (!ver) continue;
+
+            const full = await api(`/instruments/${inst.id}`, token);
+            if (!full.success) return;
+
+            setInstrument(full.data);
+            const v = full.data.versions?.find((vv: Any) => vv.id === ivId);
+            if (v) setStrategy(v.scoringStrategy || "");
+            return;
+        }
+    }
+
+    // ── Submit ──
+    async function submit() {
+        setError("");
+        const version = instrument.versions[0];
+        const isWRA = strategy === "WRA_ABSOLUTE_GAP";
+
+        const items = version.items.map((it: Any) => {
+            if (isWRA) {
+                const a = wraAnswers[it.id] ?? {};
+                return { itemId: it.id, source: a.source ?? 0, target: a.target ?? 0 };
+            } else {
+                return { itemId: it.id, source: answers360[it.id] ?? 0 };
+            }
+        });
+
+        const res = await api(`/projects/${project.id}/responses`, token, { items });
+        if (!res.success) return setError(res.error.message);
+        setResult(res.data);
+    }
+
+    function goBack() {
+        setProject(null);
+        setInstrument(null);
+        setResult(null);
+        setWraAnswers({});
+        setAnswers360({});
+        setCurrentIndex(0);
+        setStrategy("");
+    }
+
+    // ── Not logged in ──
+    if (!token) {
+        return (
+            <div style={{ padding: 24, fontFamily: "monospace", maxWidth: 400 }}>
+                <h2>Sandbox — Login</h2>
+                <div>
+                    <label>
+                        Email
+                        <br />
+                        <input
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            style={{ width: "100%" }}
+                        />
+                    </label>
+                </div>
+                <div style={{ marginTop: 8 }}>
+                    <label>
+                        Password
+                        <br />
+                        <input
+                            type="password"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            style={{ width: "100%" }}
+                        />
+                    </label>
+                </div>
+                {error && <div style={{ color: "red", marginTop: 8 }}>{error}</div>}
+                <button onClick={login} style={{ marginTop: 12 }}>
+                    Login
+                </button>
+            </div>
+        );
+    }
+
+    // ── Project selector ──
+    if (!project) {
+        return (
+            <div style={{ padding: 24, fontFamily: "monospace" }}>
+                <h2>Select Project</h2>
+                {projects.map((p: Any) => (
+                    <div key={p.id} style={{ marginBottom: 8 }}>
+                        <button onClick={() => selectProject(p)}>
+                            {p.name} — {p.instrumentVersion?.instrument?.name} v
+                            {p.instrumentVersion?.versionNumber}
+                        </button>
+                    </div>
+                ))}
+                <button
+                    onClick={() => {
+                        setToken("");
+                        setProjects([]);
+                    }}
+                    style={{ marginTop: 16 }}
+                >
+                    Logout
+                </button>
+            </div>
+        );
+    }
+
+    // ── Instrument + questionnaire ──
+    const version = instrument?.versions?.[0];
+    const isWRA = strategy === "WRA_ABSOLUTE_GAP";
+    const is360 = strategy === "NORMATIVE_360";
+    const allItems: Any[] = version?.items ?? [];
+    const totalItems = allItems.length;
+    const currentItem = allItems[currentIndex];
+
+    const isYesNo = currentItem?.scaleType === "YES_NO";
+    const opts = isYesNo
+        ? [0, 1]
+        : Array.from(
+            { length: currentItem?.scaleType === "LIKERT_7" ? 7 : 5 },
+            (_, i) => i + 1,
+        );
+
+    const allAnswered = allItems.every((it: Any) => {
+        if (isWRA) {
+            const a = wraAnswers[it.id];
+            return a?.source !== undefined && a?.target !== undefined;
+        } else {
+            return answers360[it.id] !== undefined;
+        }
+    });
+
+    const isLastItem = currentIndex === totalItems - 1;
+
+    return (
+        <div style={{ padding: 24, fontFamily: "monospace", maxWidth: 700 }}>
+            <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 16 }}>
+                <h2 style={{ margin: 0 }}>{project.name}</h2>
+                <span style={{ color: "#666" }}>{strategy ? `(${strategy})` : ""}</span>
+                <button onClick={goBack}>← Projects</button>
+            </div>
+
+            {!version ? (
+                <p>Loading instrument…</p>
+            ) : result ? (
+                <div>
+                    <h3>Item Scores</h3>
+                    <table border={1} cellPadding={4} style={{ borderCollapse: "collapse" }}>
+                        <thead>
+                        {isWRA ? (
+                            <tr>
+                                <th>Item</th>
+                                <th>Source</th>
+                                <th>Target</th>
+                                <th>Gap</th>
+                                <th>|Gap|</th>
+                            </tr>
+                        ) : (
+                            <tr>
+                                <th>Item</th>
+                                <th>Raw</th>
+                                <th>Normalized</th>
+                            </tr>
+                        )}
+                        </thead>
+                        <tbody>
+                        {result.itemScores.map((s: Any) => {
+                            const raw = result.items.find((i: Any) => i.itemId === s.itemId);
+                            return isWRA ? (
+                                <tr key={s.id}>
+                                    <td>{s.itemId}</td>
+                                    <td>{s.sourceValue ?? "—"}</td>
+                                    <td>{s.targetValue ?? "—"}</td>
+                                    <td>{s.gapValue ?? "—"}</td>
+                                    <td>{s.absoluteGapValue ?? "—"}</td>
+                                </tr>
+                            ) : (
+                                <tr key={s.id}>
+                                    <td>{s.itemId}</td>
+                                    <td>{raw?.value ?? "—"}</td>
+                                    <td>{s.sourceValue ?? "—"}</td>
+                                </tr>
+                            );
+                        })}
+                        </tbody>
+                    </table>
+
+                    <h3>Construct Scores</h3>
+                    <table border={1} cellPadding={4} style={{ borderCollapse: "collapse" }}>
+                        <thead>
+                        {isWRA ? (
+                            <tr>
+                                <th>Construct</th>
+                                <th>Source Mean</th>
+                                <th>Target Mean</th>
+                                <th>Gap Mean</th>
+                                <th>Mean |Gap|</th>
+                            </tr>
+                        ) : (
+                            <tr>
+                                <th>Construct</th>
+                                <th>Mean</th>
+                            </tr>
+                        )}
+                        </thead>
+                        <tbody>
+                        {result.constructScores.map((c: Any) =>
+                            isWRA ? (
+                                <tr key={c.id}>
+                                    <td>{c.construct.name}</td>
+                                    <td>{c.sourceMean?.toFixed(2) ?? "—"}</td>
+                                    <td>{c.targetMean?.toFixed(2) ?? "—"}</td>
+                                    <td>{c.gapMean?.toFixed(2) ?? "—"}</td>
+                                    <td>{c.meanAbsoluteGap?.toFixed(2) ?? "—"}</td>
+                                </tr>
+                            ) : (
+                                <tr key={c.id}>
+                                    <td>{c.construct.name}</td>
+                                    <td>{c.sourceMean?.toFixed(2) ?? "—"}</td>
+                                </tr>
+                            ),
+                        )}
+                        </tbody>
+                    </table>
+
+                    <h3>Global Score</h3>
+                    {result.globalScore && (
+                        <table border={1} cellPadding={4} style={{ borderCollapse: "collapse" }}>
+                            <tbody>
+                            {isWRA ? (
+                                <>
+                                    <tr>
+                                        <td>Global Source Mean</td>
+                                        <td>{result.globalScore.globalSourceMean?.toFixed(4)}</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Global Target Mean</td>
+                                        <td>{result.globalScore.globalTargetMean?.toFixed(4)}</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Global Gap Mean</td>
+                                        <td>{result.globalScore.globalGapMean?.toFixed(4)}</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Global Mean |Gap|</td>
+                                        <td>{result.globalScore.globalMeanAbsoluteGap?.toFixed(4)}</td>
+                                    </tr>
+                                </>
+                            ) : (
+                                <tr>
+                                    <td>Global Mean</td>
+                                    <td>{result.globalScore.globalSourceMean?.toFixed(4)}</td>
+                                </tr>
+                            )}
+                            <tr>
+                                <td>Scoring Model</td>
+                                <td>{result.globalScore.scoringModelVersion}</td>
+                            </tr>
+                            </tbody>
+                        </table>
+                    )}
+
+                    {!isWRA && !is360 && (
+                        <div style={{ marginTop: 8, color: "#a00" }}>
+                            Unknown scoring strategy: {strategy || "—"}
+                        </div>
+                    )}
+                </div>
+            ) : (
+                <div>
+                    <div style={{ marginBottom: 12, color: "#666" }}>
+                        Item {currentIndex + 1} of {totalItems}
+                    </div>
+
+                    {currentItem && (
+                        <div
+                            style={{
+                                border: "1px solid #ccc",
+                                padding: 20,
+                                borderRadius: 8,
+                                marginBottom: 16,
+                            }}
+                        >
+                            <div style={{ fontSize: 18, marginBottom: 16 }}>
+                                <strong>#{currentItem.position}</strong> {currentItem.text}
+                                {currentItem.behaviorPolarity && (
+                                    <span style={{ color: "#888", marginLeft: 8 }}>({currentItem.behaviorPolarity})</span>
+                                )}
+                            </div>
+
+                            {isWRA ? (
+                                <div>
+                                    <div style={{ marginBottom: 12 }}>
+                                        <strong>Jak to je (SOURCE):</strong>
+                                        <div style={{ marginTop: 4 }}>
+                                            {opts.map((v) => (
+                                                <label key={v} style={{ marginRight: 12 }}>
+                                                    <input
+                                                        type="radio"
+                                                        name={`source-${currentItem.id}`}
+                                                        checked={wraAnswers[currentItem.id]?.source === v}
+                                                        onChange={() =>
+                                                            setWraAnswers((a) => ({
+                                                                ...a,
+                                                                [currentItem.id]: { ...a[currentItem.id], source: v },
+                                                            }))
+                                                        }
+                                                    />
+                                                    {v}
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <strong>Jak bych si přál/a (TARGET):</strong>
+                                        <div style={{ marginTop: 4 }}>
+                                            {opts.map((v) => (
+                                                <label key={v} style={{ marginRight: 12 }}>
+                                                    <input
+                                                        type="radio"
+                                                        name={`target-${currentItem.id}`}
+                                                        checked={wraAnswers[currentItem.id]?.target === v}
+                                                        onChange={() =>
+                                                            setWraAnswers((a) => ({
+                                                                ...a,
+                                                                [currentItem.id]: { ...a[currentItem.id], target: v },
+                                                            }))
+                                                        }
+                                                    />
+                                                    {v}
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div>
+                                    {opts.map((v) => (
+                                        <label key={v} style={{ marginRight: 12 }}>
+                                            <input
+                                                type="radio"
+                                                name={`item-${currentItem.id}`}
+                                                checked={answers360[currentItem.id] === v}
+                                                onChange={() =>
+                                                    setAnswers360((a) => ({ ...a, [currentItem.id]: v }))
+                                                }
+                                            />
+                                            {v}
+                                        </label>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {error && <div style={{ color: "red", marginBottom: 8 }}>{error}</div>}
+
+                    <div style={{ display: "flex", gap: 12 }}>
+                        <button
+                            onClick={() => setCurrentIndex((i) => i - 1)}
+                            disabled={currentIndex === 0}
+                        >
+                            ← Prev
+                        </button>
+
+                        {isLastItem ? (
+                            <button
+                                onClick={submit}
+                                disabled={!allAnswered}
+                                style={{ fontSize: 16, padding: "8px 24px" }}
+                            >
+                                Submit Response
+                            </button>
+                        ) : (
+                            <button onClick={() => setCurrentIndex((i) => i + 1)}>
+                                Next →
+                            </button>
+                        )}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}

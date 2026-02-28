@@ -8,39 +8,257 @@ datasource db {
   provider = "mysql"
 }
 
-model User {
-  id           Int        @id @default(autoincrement())
-  email        String     @unique
-  passwordHash String     @map("password_hash")
-  name         String
-  createdAt    DateTime   @default(now()) @map("created_at")
+// ── Scale type enum ──
 
-  responses Response[]
+enum ScaleType {
+  LIKERT_5
+  LIKERT_7
+  TEXT
+  YES_NO
+}
+
+enum MeasurementType {
+  SOURCE
+  TARGET
+}
+
+enum ScoringStrategy {
+  WRA_ABSOLUTE_GAP
+  NORMATIVE_360
+}
+
+enum BehaviorPolarity {
+  POSITIVE
+  NEGATIVE
+}
+
+enum ResponseChannel {
+  SOURCE
+  TARGET
+}
+
+enum ProjectRole {
+  OWNER
+  ADMIN
+  PARTICIPANT
+}
+
+// ── Core user model ──
+
+model User {
+  id           Int                @id @default(autoincrement())
+  email        String             @unique
+  passwordHash String             @map("password_hash")
+  name         String
+  createdAt    DateTime           @default(now()) @map("created_at")
+
+  legacyResponses     LegacyResponse[]
+  instrumentResponses InstrumentResponse[]
+  ownedProjects       Project[]              @relation("ProjectOwner")
+  participations      ProjectParticipant[]
 
   @@map("users")
 }
 
-model Questionnaire {
-  id          Int        @id @default(autoincrement())
-  title       String     @unique
-  description String?
-  questions   Json       // array of { id, text, type, options? }
-  createdAt   DateTime   @default(now()) @map("created_at")
+// ── Legacy models (backward compat, deprecated) ──
 
-  responses Response[]
+model Questionnaire {
+  id          Int              @id @default(autoincrement())
+  title       String           @unique
+  description String?
+  questions   Json
+  createdAt   DateTime         @default(now()) @map("created_at")
+
+  responses LegacyResponse[]
 
   @@map("questionnaires")
 }
 
-model Response {
+model LegacyResponse {
   id               Int           @id @default(autoincrement())
   userId           Int           @map("user_id")
   questionnaireId  Int           @map("questionnaire_id")
-  answers          Json          // { questionId: answer }
+  answers          Json
   createdAt        DateTime      @default(now()) @map("created_at")
 
   user             User          @relation(fields: [userId], references: [id])
   questionnaire    Questionnaire @relation(fields: [questionnaireId], references: [id])
 
-  @@map("responses")
+  @@map("legacy_responses")
+}
+
+// ── Psychometric instrument models ──
+
+model Instrument {
+  id          Int                 @id @default(autoincrement())
+  name        String              @unique
+  description String?
+  createdAt   DateTime            @default(now()) @map("created_at")
+
+  versions InstrumentVersion[]
+
+  @@map("instruments")
+}
+
+model InstrumentVersion {
+  id              Int             @id @default(autoincrement())
+  instrumentId    Int             @map("instrument_id")
+  versionNumber   String          @map("version_number")
+  scoringStrategy ScoringStrategy @default(WRA_ABSOLUTE_GAP) @map("scoring_strategy")
+  isActive        Boolean         @default(true) @map("is_active")
+  createdAt       DateTime        @default(now()) @map("created_at")
+
+  instrument Instrument           @relation(fields: [instrumentId], references: [id])
+  items      Item[]
+  responses  InstrumentResponse[]
+  projects   Project[]
+
+  @@unique([instrumentId, versionNumber])
+  @@map("instrument_versions")
+}
+
+model Construct {
+  id          Int     @id @default(autoincrement())
+  name        String  @unique
+  description String?
+
+  items           Item[]
+  constructScores ConstructScore[]
+
+  @@map("constructs")
+}
+
+model Item {
+  id                  Int               @id @default(autoincrement())
+  instrumentVersionId Int               @map("instrument_version_id")
+  constructId         Int               @map("construct_id")
+  text                String            @db.Text
+  scaleType           ScaleType         @default(LIKERT_5) @map("scale_type")
+  reverseScored       Boolean           @default(false) @map("reverse_scored")
+  measurementType     MeasurementType   @default(SOURCE) @map("measurement_type")
+  gapGroupId          String?           @map("gap_group_id")
+  behaviorPolarity    BehaviorPolarity? @map("behavior_polarity")
+  position            Int
+
+  instrumentVersion InstrumentVersion @relation(fields: [instrumentVersionId], references: [id])
+  construct         Construct         @relation(fields: [constructId], references: [id])
+  responseItems     ResponseItem[]
+  itemScores        ItemScore[]
+
+  @@map("items")
+}
+
+model InstrumentResponse {
+  id                  Int              @id @default(autoincrement())
+  userId              Int              @map("user_id")
+  instrumentVersionId Int              @map("instrument_version_id")
+  projectId           Int              @map("project_id")
+  createdAt           DateTime         @default(now()) @map("created_at")
+
+  user              User              @relation(fields: [userId], references: [id])
+  instrumentVersion InstrumentVersion @relation(fields: [instrumentVersionId], references: [id])
+  project           Project           @relation(fields: [projectId], references: [id])
+  items             ResponseItem[]
+  itemScores        ItemScore[]
+  constructScores   ConstructScore[]
+  globalScore       GlobalScore?
+
+  @@map("instrument_responses")
+}
+
+// ── Project models ──
+
+model Project {
+  id                  Int              @id @default(autoincrement())
+  name                String           @unique
+  description         String?
+  ownerUserId         Int              @map("owner_user_id")
+  instrumentVersionId Int              @map("instrument_version_id")
+  createdAt           DateTime         @default(now()) @map("created_at")
+
+  owner             User                @relation("ProjectOwner", fields: [ownerUserId], references: [id])
+  instrumentVersion InstrumentVersion   @relation(fields: [instrumentVersionId], references: [id])
+  participants      ProjectParticipant[]
+  responses         InstrumentResponse[]
+
+  @@map("projects")
+}
+
+model ProjectParticipant {
+  id        Int         @id @default(autoincrement())
+  projectId Int         @map("project_id")
+  userId    Int         @map("user_id")
+  role      ProjectRole @default(PARTICIPANT)
+  joinedAt  DateTime    @default(now()) @map("joined_at")
+
+  project Project @relation(fields: [projectId], references: [id])
+  user    User    @relation(fields: [userId], references: [id])
+
+  @@unique([projectId, userId])
+  @@map("project_participants")
+}
+
+model ResponseItem {
+  id         Int             @id @default(autoincrement())
+  responseId Int             @map("response_id")
+  itemId     Int             @map("item_id")
+  channel    ResponseChannel @default(SOURCE)
+  value      Int
+
+  response InstrumentResponse @relation(fields: [responseId], references: [id])
+  item     Item               @relation(fields: [itemId], references: [id])
+
+  @@unique([responseId, itemId, channel])
+  @@map("response_items")
+}
+
+// ── Score models ──
+
+model ItemScore {
+  id               Int    @id @default(autoincrement())
+  responseId       Int    @map("response_id")
+  itemId           Int    @map("item_id")
+  sourceValue      Int?   @map("source_value")
+  targetValue      Int?   @map("target_value")
+  gapValue         Float? @map("gap_value")
+  absoluteGapValue Float? @map("absolute_gap_value")
+
+  response InstrumentResponse @relation(fields: [responseId], references: [id])
+  item     Item               @relation(fields: [itemId], references: [id])
+
+  @@unique([responseId, itemId])
+  @@map("item_scores")
+}
+
+model ConstructScore {
+  id                  Int      @id @default(autoincrement())
+  responseId          Int      @map("response_id")
+  constructId         Int      @map("construct_id")
+  sourceMean          Float?   @map("source_mean")
+  targetMean          Float?   @map("target_mean")
+  gapMean             Float?   @map("gap_mean")
+  meanAbsoluteGap     Float?   @map("mean_absolute_gap")
+  scoringModelVersion String   @default("1.0") @map("scoring_model_version")
+  computedAt          DateTime @default(now()) @map("computed_at")
+
+  response  InstrumentResponse @relation(fields: [responseId], references: [id])
+  construct Construct          @relation(fields: [constructId], references: [id])
+
+  @@unique([responseId, constructId])
+  @@map("construct_scores")
+}
+
+model GlobalScore {
+  id                    Int      @id @default(autoincrement())
+  responseId            Int      @unique @map("response_id")
+  globalSourceMean      Float?   @map("global_source_mean")
+  globalTargetMean      Float?   @map("global_target_mean")
+  globalGapMean         Float?   @map("global_gap_mean")
+  globalMeanAbsoluteGap Float?   @map("global_mean_absolute_gap")
+  scoringModelVersion   String   @default("1.0") @map("scoring_model_version")
+  computedAt            DateTime @default(now()) @map("computed_at")
+
+  response InstrumentResponse @relation(fields: [responseId], references: [id])
+
+  @@map("global_scores")
 }

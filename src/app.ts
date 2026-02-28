@@ -3,7 +3,8 @@ import cors from "cors";
 import { env } from "./config/env";
 import { authRoutes } from "./routes/authRoutes";
 import { questionnaireRoutes } from "./routes/questionnaireRoutes";
-import { feedbackRoutes } from "./routes/feedbackRoutes";
+import { instrumentRoutes } from "./routes/instrumentRoutes";
+import { projectRoutes } from "./routes/projectRoutes";
 import { errorHandler } from "./middleware/errorHandler";
 import { sendError } from "./utils/response";
 
@@ -25,8 +26,9 @@ app.get("/health", (_req, res) => {
 
 // Routes
 app.use("/auth", authRoutes);
-app.use("/questionnaires", questionnaireRoutes);
-app.use("/responses", feedbackRoutes);
+app.use("/instruments", instrumentRoutes);
+app.use("/projects", projectRoutes);
+app.use("/questionnaires", questionnaireRoutes); // legacy
 
 // 404 catch-all
 app.use((_req, res) => {
