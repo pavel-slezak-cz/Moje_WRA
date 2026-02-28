@@ -24,9 +24,14 @@ export default function App() {
     const [projects, setProjects] = useState<Any[]>([]);
     const [project, setProject] = useState<Any>(null);
     const [instrument, setInstrument] = useState<Any>(null);
-    const [answers, setAnswers] = useState<Record<number, number>>({});
-    const [result, setResult] = useState<Any>(null);
     const [strategy, setStrategy] = useState("");
+
+    // Questionnaire state
+    const [currentIndex, setCurrentIndex] = useState(0);
+    const [wraAnswers, setWraAnswers] = useState<Record<number, { source?: number; target?: number }>>({});
+    const [answers360, setAnswers360] = useState<Record<number, number>>({});
+
+    const [result, setResult] = useState<Any>(null);
 
     // ── Login ──
     async function login() {
@@ -42,7 +47,9 @@ export default function App() {
     async function selectProject(p: Any) {
         setProject(p);
         setResult(null);
-        setAnswers({});
+        setWraAnswers({});
+        setAnswers360({});
+        setCurrentIndex(0);
         setStrategy("");
 
         const res = await api(`/projects/${p.id}`, token);
@@ -70,16 +77,30 @@ export default function App() {
     async function submit() {
         setError("");
         const version = instrument.versions[0];
-        const defaultVal = version.items[0]?.scaleType === "YES_NO" ? 0 : 3;
+        const isWRA = strategy === "WRA_ABSOLUTE_GAP";
 
-        const items = version.items.map((it: Any) => ({
-            itemId: it.id,
-            value: answers[it.id] ?? defaultVal,
-        }));
+        const items = version.items.map((it: Any) => {
+            if (isWRA) {
+                const a = wraAnswers[it.id] ?? {};
+                return { itemId: it.id, source: a.source ?? 0, target: a.target ?? 0 };
+            } else {
+                return { itemId: it.id, source: answers360[it.id] ?? 0 };
+            }
+        });
 
         const res = await api(`/projects/${project.id}/responses`, token, { items });
         if (!res.success) return setError(res.error.message);
         setResult(res.data);
+    }
+
+    function goBack() {
+        setProject(null);
+        setInstrument(null);
+        setResult(null);
+        setWraAnswers({});
+        setAnswers360({});
+        setCurrentIndex(0);
+        setStrategy("");
     }
 
     // ── Not logged in ──
@@ -144,227 +165,279 @@ export default function App() {
         );
     }
 
-    // ── Instrument + scores ──
+    // ── Instrument + questionnaire ──
     const version = instrument?.versions?.[0];
     const isWRA = strategy === "WRA_ABSOLUTE_GAP";
     const is360 = strategy === "NORMATIVE_360";
-    const isYesNo = version?.items?.[0]?.scaleType === "YES_NO";
+    const allItems: Any[] = version?.items ?? [];
+    const totalItems = allItems.length;
+    const currentItem = allItems[currentIndex];
 
-    const groupedItems: Record<string, Any[]> = {};
-    if (version) {
-        for (const item of version.items) {
-            const cName = item.construct.name;
-            (groupedItems[cName] ??= []).push(item);
+    const isYesNo = currentItem?.scaleType === "YES_NO";
+    const opts = isYesNo
+        ? [0, 1]
+        : Array.from(
+            { length: currentItem?.scaleType === "LIKERT_7" ? 7 : 5 },
+            (_, i) => i + 1,
+        );
+
+    const allAnswered = allItems.every((it: Any) => {
+        if (isWRA) {
+            const a = wraAnswers[it.id];
+            return a?.source !== undefined && a?.target !== undefined;
+        } else {
+            return answers360[it.id] !== undefined;
         }
-    }
+    });
+
+    const isLastItem = currentIndex === totalItems - 1;
 
     return (
-        <div style={{ padding: 24, fontFamily: "monospace", maxWidth: 900 }}>
-            <div
-                style={{
-                    display: "flex",
-                    gap: 12,
-                    alignItems: "center",
-                    marginBottom: 16,
-                }}
-            >
+        <div style={{ padding: 24, fontFamily: "monospace", maxWidth: 700 }}>
+            <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 16 }}>
                 <h2 style={{ margin: 0 }}>{project.name}</h2>
-                <span style={{ color: "#666" }}>
-          {strategy ? `(${strategy})` : ""}
-        </span>
-                <button
-                    onClick={() => {
-                        setProject(null);
-                        setInstrument(null);
-                        setResult(null);
-                        setAnswers({});
-                        setStrategy("");
-                    }}
-                >
-                    ← Projects
-                </button>
+                <span style={{ color: "#666" }}>{strategy ? `(${strategy})` : ""}</span>
+                <button onClick={goBack}>← Projects</button>
             </div>
 
             {!version ? (
                 <p>Loading instrument…</p>
-            ) : (
-                <>
-                    {Object.entries(groupedItems).map(([construct, items]) => (
-                        <fieldset key={construct} style={{ marginBottom: 16 }}>
-                            <legend>
-                                <strong>{construct}</strong>
-                            </legend>
-                            {items.map((item: Any) => {
-                                const opts = isYesNo
-                                    ? [0, 1]
-                                    : Array.from(
-                                        { length: item.scaleType === "LIKERT_7" ? 7 : 5 },
-                                        (_, i) => i + 1
-                                    );
+            ) : result ? (
+                <div>
+                    <h3>Item Scores</h3>
+                    <table border={1} cellPadding={4} style={{ borderCollapse: "collapse" }}>
+                        <thead>
+                        {isWRA ? (
+                            <tr>
+                                <th>Item</th>
+                                <th>Source</th>
+                                <th>Target</th>
+                                <th>Gap</th>
+                                <th>|Gap|</th>
+                            </tr>
+                        ) : (
+                            <tr>
+                                <th>Item</th>
+                                <th>Raw</th>
+                                <th>Normalized</th>
+                            </tr>
+                        )}
+                        </thead>
+                        <tbody>
+                        {result.itemScores.map((s: Any) => {
+                            const raw = result.items.find((i: Any) => i.itemId === s.itemId);
+                            return isWRA ? (
+                                <tr key={s.id}>
+                                    <td>{s.itemId}</td>
+                                    <td>{s.sourceValue ?? "—"}</td>
+                                    <td>{s.targetValue ?? "—"}</td>
+                                    <td>{s.gapValue ?? "—"}</td>
+                                    <td>{s.absoluteGapValue ?? "—"}</td>
+                                </tr>
+                            ) : (
+                                <tr key={s.id}>
+                                    <td>{s.itemId}</td>
+                                    <td>{raw?.value ?? "—"}</td>
+                                    <td>{s.sourceValue ?? "—"}</td>
+                                </tr>
+                            );
+                        })}
+                        </tbody>
+                    </table>
 
-                                return (
-                                    <div key={item.id} style={{ marginBottom: 10, paddingLeft: 8 }}>
-                                        <div>
-                                            <strong>#{item.position}</strong> {item.text}
-                                            <span style={{ color: "#888", marginLeft: 8 }}>
-                        [{item.measurementType}]
-                                                {item.reverseScored && " (R)"}
-                                                {item.behaviorPolarity && ` (${item.behaviorPolarity})`}
-                                                {item.gapGroupId && ` gap:${item.gapGroupId}`}
-                      </span>
-                                        </div>
+                    <h3>Construct Scores</h3>
+                    <table border={1} cellPadding={4} style={{ borderCollapse: "collapse" }}>
+                        <thead>
+                        {isWRA ? (
+                            <tr>
+                                <th>Construct</th>
+                                <th>Source Mean</th>
+                                <th>Target Mean</th>
+                                <th>Gap Mean</th>
+                                <th>Mean |Gap|</th>
+                            </tr>
+                        ) : (
+                            <tr>
+                                <th>Construct</th>
+                                <th>Mean</th>
+                            </tr>
+                        )}
+                        </thead>
+                        <tbody>
+                        {result.constructScores.map((c: Any) =>
+                            isWRA ? (
+                                <tr key={c.id}>
+                                    <td>{c.construct.name}</td>
+                                    <td>{c.sourceMean?.toFixed(2) ?? "—"}</td>
+                                    <td>{c.targetMean?.toFixed(2) ?? "—"}</td>
+                                    <td>{c.gapMean?.toFixed(2) ?? "—"}</td>
+                                    <td>{c.meanAbsoluteGap?.toFixed(2) ?? "—"}</td>
+                                </tr>
+                            ) : (
+                                <tr key={c.id}>
+                                    <td>{c.construct.name}</td>
+                                    <td>{c.sourceMean?.toFixed(2) ?? "—"}</td>
+                                </tr>
+                            ),
+                        )}
+                        </tbody>
+                    </table>
+
+                    <h3>Global Score</h3>
+                    {result.globalScore && (
+                        <table border={1} cellPadding={4} style={{ borderCollapse: "collapse" }}>
+                            <tbody>
+                            {isWRA ? (
+                                <>
+                                    <tr>
+                                        <td>Global Source Mean</td>
+                                        <td>{result.globalScore.globalSourceMean?.toFixed(4)}</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Global Target Mean</td>
+                                        <td>{result.globalScore.globalTargetMean?.toFixed(4)}</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Global Gap Mean</td>
+                                        <td>{result.globalScore.globalGapMean?.toFixed(4)}</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Global Mean |Gap|</td>
+                                        <td>{result.globalScore.globalMeanAbsoluteGap?.toFixed(4)}</td>
+                                    </tr>
+                                </>
+                            ) : (
+                                <tr>
+                                    <td>Global Mean</td>
+                                    <td>{result.globalScore.globalSourceMean?.toFixed(4)}</td>
+                                </tr>
+                            )}
+                            <tr>
+                                <td>Scoring Model</td>
+                                <td>{result.globalScore.scoringModelVersion}</td>
+                            </tr>
+                            </tbody>
+                        </table>
+                    )}
+
+                    {!isWRA && !is360 && (
+                        <div style={{ marginTop: 8, color: "#a00" }}>
+                            Unknown scoring strategy: {strategy || "—"}
+                        </div>
+                    )}
+                </div>
+            ) : (
+                <div>
+                    <div style={{ marginBottom: 12, color: "#666" }}>
+                        Item {currentIndex + 1} of {totalItems}
+                    </div>
+
+                    {currentItem && (
+                        <div
+                            style={{
+                                border: "1px solid #ccc",
+                                padding: 20,
+                                borderRadius: 8,
+                                marginBottom: 16,
+                            }}
+                        >
+                            <div style={{ fontSize: 18, marginBottom: 16 }}>
+                                <strong>#{currentItem.position}</strong> {currentItem.text}
+                                {currentItem.behaviorPolarity && (
+                                    <span style={{ color: "#888", marginLeft: 8 }}>({currentItem.behaviorPolarity})</span>
+                                )}
+                            </div>
+
+                            {isWRA ? (
+                                <div>
+                                    <div style={{ marginBottom: 12 }}>
+                                        <strong>Jak to je (SOURCE):</strong>
                                         <div style={{ marginTop: 4 }}>
                                             {opts.map((v) => (
-                                                <label key={v} style={{ marginRight: 10 }}>
+                                                <label key={v} style={{ marginRight: 12 }}>
                                                     <input
                                                         type="radio"
-                                                        name={`item-${item.id}`}
-                                                        checked={answers[item.id] === v}
-                                                        onChange={() => setAnswers((a) => ({ ...a, [item.id]: v }))}
+                                                        name={`source-${currentItem.id}`}
+                                                        checked={wraAnswers[currentItem.id]?.source === v}
+                                                        onChange={() =>
+                                                            setWraAnswers((a) => ({
+                                                                ...a,
+                                                                [currentItem.id]: { ...a[currentItem.id], source: v },
+                                                            }))
+                                                        }
                                                     />
                                                     {v}
                                                 </label>
                                             ))}
                                         </div>
                                     </div>
-                                );
-                            })}
-                        </fieldset>
-                    ))}
-
-                    {error && <div style={{ color: "red", marginBottom: 8 }}>{error}</div>}
-                    <button onClick={submit} style={{ fontSize: 16, padding: "8px 24px" }}>
-                        Submit Response
-                    </button>
-
-                    {result && (
-                        <div style={{ marginTop: 24 }}>
-                            <h3>Item Scores</h3>
-                            <table border={1} cellPadding={4} style={{ borderCollapse: "collapse" }}>
-                                <thead>
-                                {isWRA ? (
-                                    <tr>
-                                        <th>Item</th>
-                                        <th>Raw</th>
-                                        <th>Source</th>
-                                        <th>Target</th>
-                                        <th>Gap</th>
-                                        <th>|Gap|</th>
-                                    </tr>
-                                ) : (
-                                    <tr>
-                                        <th>Item</th>
-                                        <th>Raw</th>
-                                        <th>Normalized</th>
-                                    </tr>
-                                )}
-                                </thead>
-                                <tbody>
-                                {result.itemScores.map((s: Any) => {
-                                    const raw = result.items.find((i: Any) => i.itemId === s.itemId);
-                                    return isWRA ? (
-                                        <tr key={s.id}>
-                                            <td>{s.itemId}</td>
-                                            <td>{raw?.value ?? "—"}</td>
-                                            <td>{s.sourceValue ?? "—"}</td>
-                                            <td>{s.targetValue ?? "—"}</td>
-                                            <td>{s.gapValue ?? "—"}</td>
-                                            <td>{s.absoluteGapValue ?? "—"}</td>
-                                        </tr>
-                                    ) : (
-                                        <tr key={s.id}>
-                                            <td>{s.itemId}</td>
-                                            <td>{raw?.value ?? "—"}</td>
-                                            <td>{s.sourceValue ?? "—"}</td>
-                                        </tr>
-                                    );
-                                })}
-                                </tbody>
-                            </table>
-
-                            <h3>Construct Scores</h3>
-                            <table border={1} cellPadding={4} style={{ borderCollapse: "collapse" }}>
-                                <thead>
-                                {isWRA ? (
-                                    <tr>
-                                        <th>Construct</th>
-                                        <th>Source Mean</th>
-                                        <th>Target Mean</th>
-                                        <th>Gap Mean</th>
-                                        <th>Mean |Gap|</th>
-                                    </tr>
-                                ) : (
-                                    <tr>
-                                        <th>Construct</th>
-                                        <th>Mean</th>
-                                    </tr>
-                                )}
-                                </thead>
-                                <tbody>
-                                {result.constructScores.map((c: Any) =>
-                                    isWRA ? (
-                                        <tr key={c.id}>
-                                            <td>{c.construct.name}</td>
-                                            <td>{c.sourceMean?.toFixed(2) ?? "—"}</td>
-                                            <td>{c.targetMean?.toFixed(2) ?? "—"}</td>
-                                            <td>{c.gapMean?.toFixed(2) ?? "—"}</td>
-                                            <td>{c.meanAbsoluteGap?.toFixed(2) ?? "—"}</td>
-                                        </tr>
-                                    ) : (
-                                        <tr key={c.id}>
-                                            <td>{c.construct.name}</td>
-                                            <td>{c.sourceMean?.toFixed(2) ?? "—"}</td>
-                                        </tr>
-                                    )
-                                )}
-                                </tbody>
-                            </table>
-
-                            <h3>Global Score</h3>
-                            {result.globalScore && (
-                                <table border={1} cellPadding={4} style={{ borderCollapse: "collapse" }}>
-                                    <tbody>
-                                    {isWRA ? (
-                                        <>
-                                            <tr>
-                                                <td>Global Source Mean</td>
-                                                <td>{result.globalScore.globalSourceMean?.toFixed(4)}</td>
-                                            </tr>
-                                            <tr>
-                                                <td>Global Target Mean</td>
-                                                <td>{result.globalScore.globalTargetMean?.toFixed(4)}</td>
-                                            </tr>
-                                            <tr>
-                                                <td>Global Gap Mean</td>
-                                                <td>{result.globalScore.globalGapMean?.toFixed(4)}</td>
-                                            </tr>
-                                            <tr>
-                                                <td>Global Mean |Gap|</td>
-                                                <td>{result.globalScore.globalMeanAbsoluteGap?.toFixed(4)}</td>
-                                            </tr>
-                                        </>
-                                    ) : (
-                                        <tr>
-                                            <td>Global Mean</td>
-                                            <td>{result.globalScore.globalSourceMean?.toFixed(4)}</td>
-                                        </tr>
-                                    )}
-                                    <tr>
-                                        <td>Scoring Model</td>
-                                        <td>{result.globalScore.scoringModelVersion}</td>
-                                    </tr>
-                                    </tbody>
-                                </table>
-                            )}
-
-                            {!isWRA && !is360 && (
-                                <div style={{ marginTop: 8, color: "#a00" }}>
-                                    Unknown scoring strategy: {strategy || "—"}
+                                    <div>
+                                        <strong>Jak bych si přál/a (TARGET):</strong>
+                                        <div style={{ marginTop: 4 }}>
+                                            {opts.map((v) => (
+                                                <label key={v} style={{ marginRight: 12 }}>
+                                                    <input
+                                                        type="radio"
+                                                        name={`target-${currentItem.id}`}
+                                                        checked={wraAnswers[currentItem.id]?.target === v}
+                                                        onChange={() =>
+                                                            setWraAnswers((a) => ({
+                                                                ...a,
+                                                                [currentItem.id]: { ...a[currentItem.id], target: v },
+                                                            }))
+                                                        }
+                                                    />
+                                                    {v}
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div>
+                                    {opts.map((v) => (
+                                        <label key={v} style={{ marginRight: 12 }}>
+                                            <input
+                                                type="radio"
+                                                name={`item-${currentItem.id}`}
+                                                checked={answers360[currentItem.id] === v}
+                                                onChange={() =>
+                                                    setAnswers360((a) => ({ ...a, [currentItem.id]: v }))
+                                                }
+                                            />
+                                            {v}
+                                        </label>
+                                    ))}
                                 </div>
                             )}
                         </div>
                     )}
-                </>
+
+                    {error && <div style={{ color: "red", marginBottom: 8 }}>{error}</div>}
+
+                    <div style={{ display: "flex", gap: 12 }}>
+                        <button
+                            onClick={() => setCurrentIndex((i) => i - 1)}
+                            disabled={currentIndex === 0}
+                        >
+                            ← Prev
+                        </button>
+
+                        {isLastItem ? (
+                            <button
+                                onClick={submit}
+                                disabled={!allAnswered}
+                                style={{ fontSize: 16, padding: "8px 24px" }}
+                            >
+                                Submit Response
+                            </button>
+                        ) : (
+                            <button onClick={() => setCurrentIndex((i) => i + 1)}>
+                                Next →
+                            </button>
+                        )}
+                    </div>
+                </div>
             )}
         </div>
     );

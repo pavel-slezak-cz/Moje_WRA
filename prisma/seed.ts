@@ -136,10 +136,8 @@ async function main() {
 
         await prisma.item.createMany({
             data: [
-                { instrumentVersionId: wraMiniVer.id, constructId: taskingConstruct.id, text: "Pomáhá mi s mými úkoly", scaleType: ScaleType.YES_NO, reverseScored: false, measurementType: MeasurementType.SOURCE, gapGroupId: "HELP", position: 1 },
-                { instrumentVersionId: wraMiniVer.id, constructId: taskingConstruct.id, text: "Přeji si, aby mi více pomáhal s úkoly", scaleType: ScaleType.YES_NO, reverseScored: false, measurementType: MeasurementType.TARGET, gapGroupId: "HELP", position: 2 },
-                { instrumentVersionId: wraMiniVer.id, constructId: taskingConstruct.id, text: "Ignoruje mě", scaleType: ScaleType.YES_NO, reverseScored: false, measurementType: MeasurementType.SOURCE, gapGroupId: "IGNORE", position: 3 },
-                { instrumentVersionId: wraMiniVer.id, constructId: taskingConstruct.id, text: "Přeji si, aby mě méně ignoroval", scaleType: ScaleType.YES_NO, reverseScored: false, measurementType: MeasurementType.TARGET, gapGroupId: "IGNORE", position: 4 },
+                { instrumentVersionId: wraMiniVer.id, constructId: taskingConstruct.id, text: "Pomáhá mi s mými úkoly.", scaleType: ScaleType.YES_NO, reverseScored: false, position: 1 },
+                { instrumentVersionId: wraMiniVer.id, constructId: taskingConstruct.id, text: "Ignoruje mě.", scaleType: ScaleType.YES_NO, reverseScored: false, position: 2 },
             ],
         });
     }

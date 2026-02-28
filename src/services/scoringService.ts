@@ -1,5 +1,6 @@
 import type { PrismaClient } from "../generated/prisma/client";
-import type { ScaleType, MeasurementType, ScoringStrategy, BehaviorPolarity } from "../generated/prisma/enums";
+import type { ScaleType, ScoringStrategy, BehaviorPolarity } from "../generated/prisma/enums";
+import type { NormalizedRow } from "../middleware/validate";
 
 const SCORING_MODEL_VERSION = "1.0";
 
@@ -10,14 +11,7 @@ interface ItemMeta {
     constructId: number;
     scaleType: ScaleType;
     reverseScored: boolean;
-    measurementType: MeasurementType;
-    gapGroupId: string | null;
     behaviorPolarity: BehaviorPolarity | null;
-}
-
-interface RawAnswer {
-    itemId: number;
-    value: number;
 }
 
 type Tx = Parameters<Parameters<PrismaClient["$transaction"]>[0]>[0];
@@ -48,81 +42,52 @@ export async function scoreResponse(
     responseId: number,
     strategy: ScoringStrategy,
     items: ItemMeta[],
-    rawAnswers: RawAnswer[],
+    rows: NormalizedRow[],
 ) {
     if (strategy === "WRA_ABSOLUTE_GAP") {
-        return scoreWRA(tx, responseId, items, rawAnswers);
+        return scoreWRA(tx, responseId, items, rows);
     } else {
-        return score360(tx, responseId, items, rawAnswers);
+        return score360(tx, responseId, items, rows);
     }
 }
 
 // ── WRA_ABSOLUTE_GAP scoring ──
+// Pairs SOURCE + TARGET by itemId from normalized rows.
+// One ItemScore per item.
 
-async function scoreWRA(tx: Tx, responseId: number, items: ItemMeta[], rawAnswers: RawAnswer[]) {
+async function scoreWRA(tx: Tx, responseId: number, items: ItemMeta[], rows: NormalizedRow[]) {
     const itemMap = new Map(items.map((i) => [i.id, i]));
-    const scoredValues = new Map<number, number>();
 
-    for (const ans of rawAnswers) {
-        const meta = itemMap.get(ans.itemId)!;
-        const scored = meta.reverseScored ? reverseScore(ans.value, meta.scaleType) : ans.value;
-        scoredValues.set(ans.itemId, scored);
+    // Build scored values keyed by (itemId, channel)
+    const scored = new Map<string, number>(); // key: "itemId:channel"
+    for (const r of rows) {
+        const meta = itemMap.get(r.itemId)!;
+        const val = meta.reverseScored ? reverseScore(r.value, meta.scaleType) : r.value;
+        scored.set(`${r.itemId}:${r.channel}`, val);
     }
 
-    // Gap groups
-    const gapGroups = new Map<string, { source?: ItemMeta; target?: ItemMeta }>();
-    for (const item of items) {
-        if (item.gapGroupId) {
-            const group = gapGroups.get(item.gapGroupId) ?? {};
-            if (item.measurementType === "SOURCE") group.source = item;
-            else group.target = item;
-            gapGroups.set(item.gapGroupId, group);
-        }
-    }
+    // Unique item IDs (each item gets one ItemScore)
+    const uniqueItemIds = [...new Set(rows.map((r) => r.itemId))];
 
-    // Item scores
-    const itemScoreData = items.map((item) => {
-        const scored = scoredValues.get(item.id)!;
-        let sourceValue: number | null = null;
-        let targetValue: number | null = null;
-        let gapValue: number | null = null;
-        let absoluteGapValue: number | null = null;
-
-        if (item.measurementType === "SOURCE") sourceValue = scored;
-        else targetValue = scored;
-
-        if (item.gapGroupId) {
-            const pair = gapGroups.get(item.gapGroupId)!;
-            if (pair.source && pair.target) {
-                const sv = scoredValues.get(pair.source.id)!;
-                const tv = scoredValues.get(pair.target.id)!;
-                gapValue = tv - sv;
-                absoluteGapValue = Math.abs(gapValue);
-            }
-        }
-
-        return { responseId, itemId: item.id, sourceValue, targetValue, gapValue, absoluteGapValue };
+    const itemScoreData = uniqueItemIds.map((itemId) => {
+        const sv = scored.get(`${itemId}:SOURCE`) ?? null;
+        const tv = scored.get(`${itemId}:TARGET`) ?? null;
+        const gapValue = sv !== null && tv !== null ? tv - sv : null;
+        const absoluteGapValue = gapValue !== null ? Math.abs(gapValue) : null;
+        return { responseId, itemId, sourceValue: sv, targetValue: tv, gapValue, absoluteGapValue };
     });
 
     await tx.itemScore.createMany({ data: itemScoreData });
 
     // Construct scores
     const constructGroups = new Map<number, { sourceVals: number[]; targetVals: number[]; absGaps: number[] }>();
-    for (const item of items) {
-        const group = constructGroups.get(item.constructId) ?? { sourceVals: [], targetVals: [], absGaps: [] };
-        const scored = scoredValues.get(item.id)!;
-        if (item.measurementType === "SOURCE") group.sourceVals.push(scored);
-        else group.targetVals.push(scored);
-        constructGroups.set(item.constructId, group);
-    }
-    // Collect absolute gaps per construct (one per gap group)
-    for (const [, pair] of gapGroups) {
-        if (pair.source && pair.target) {
-            const sv = scoredValues.get(pair.source.id)!;
-            const tv = scoredValues.get(pair.target.id)!;
-            const cGroup = constructGroups.get(pair.source.constructId)!;
-            cGroup.absGaps.push(Math.abs(tv - sv));
-        }
+    for (const isd of itemScoreData) {
+        const meta = itemMap.get(isd.itemId)!;
+        const group = constructGroups.get(meta.constructId) ?? { sourceVals: [], targetVals: [], absGaps: [] };
+        if (isd.sourceValue !== null) group.sourceVals.push(isd.sourceValue);
+        if (isd.targetValue !== null) group.targetVals.push(isd.targetValue);
+        if (isd.absoluteGapValue !== null) group.absGaps.push(isd.absoluteGapValue);
+        constructGroups.set(meta.constructId, group);
     }
 
     const constructScoreData = Array.from(constructGroups.entries()).map(
@@ -158,15 +123,15 @@ async function scoreWRA(tx: Tx, responseId: number, items: ItemMeta[], rawAnswer
 
 // ── NORMATIVE_360 scoring ──
 
-async function score360(tx: Tx, responseId: number, items: ItemMeta[], rawAnswers: RawAnswer[]) {
+async function score360(tx: Tx, responseId: number, items: ItemMeta[], rows: NormalizedRow[]) {
     const itemMap = new Map(items.map((i) => [i.id, i]));
     const normalizedValues = new Map<number, number>();
 
-    for (const ans of rawAnswers) {
-        const meta = itemMap.get(ans.itemId)!;
+    for (const r of rows) {
+        const meta = itemMap.get(r.itemId)!;
         // NEGATIVE polarity: flip 0↔1
-        const normalized = meta.behaviorPolarity === "NEGATIVE" ? 1 - ans.value : ans.value;
-        normalizedValues.set(ans.itemId, normalized);
+        const normalized = meta.behaviorPolarity === "NEGATIVE" ? 1 - r.value : r.value;
+        normalizedValues.set(r.itemId, normalized);
     }
 
     // Item scores — store normalized in sourceValue, no target/gap

@@ -32,6 +32,11 @@ enum BehaviorPolarity {
   NEGATIVE
 }
 
+enum ResponseChannel {
+  SOURCE
+  TARGET
+}
+
 enum ProjectRole {
   OWNER
   ADMIN
@@ -194,15 +199,16 @@ model ProjectParticipant {
 }
 
 model ResponseItem {
-  id         Int @id @default(autoincrement())
-  responseId Int @map("response_id")
-  itemId     Int @map("item_id")
+  id         Int             @id @default(autoincrement())
+  responseId Int             @map("response_id")
+  itemId     Int             @map("item_id")
+  channel    ResponseChannel @default(SOURCE)
   value      Int
 
   response InstrumentResponse @relation(fields: [responseId], references: [id])
   item     Item               @relation(fields: [itemId], references: [id])
 
-  @@unique([responseId, itemId])
+  @@unique([responseId, itemId, channel])
   @@map("response_items")
 }
 

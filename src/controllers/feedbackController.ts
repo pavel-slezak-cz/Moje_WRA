@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import prisma from "../config/db";
-import { submitResponseSchema, submitInstrumentResponseSchema } from "../middleware/validate";
+import { submitResponseSchema, submitInstrumentResponseSchema, NormalizedRow } from "../middleware/validate";
 import { sendSuccess, sendError } from "../utils/response";
 import { scoreResponse } from "../services/scoringService";
 
@@ -43,6 +43,7 @@ export async function submitProjectResponse(req: Request, res: Response, next: N
     try {
         const projectId = req.projectParticipant!.projectId;
         const data = submitInstrumentResponseSchema.parse(req.body);
+        const rows: NormalizedRow[] = data.rows;
 
         // Load project's instrument version + its items (with scoring metadata)
         const project = await prisma.project.findUnique({
@@ -70,13 +71,40 @@ export async function submitProjectResponse(req: Request, res: Response, next: N
             return;
         }
 
-        // Validate that all submitted itemIds belong to this version
+        const strategy = project.instrumentVersion.scoringStrategy;
         const validItemIds = new Set(project.instrumentVersion.items.map((i) => i.id));
-        const invalidItems = data.items.filter((i) => !validItemIds.has(i.itemId));
-        if (invalidItems.length > 0) {
+
+        // Validate that all submitted itemIds belong to this version
+        const invalidIds = rows.filter((r) => !validItemIds.has(r.itemId)).map((r) => r.itemId);
+        if (invalidIds.length > 0) {
             sendError(res, "Some item IDs do not belong to this instrument version", 400, "INVALID_ITEMS",
-                { invalidItemIds: invalidItems.map((i) => i.itemId) });
+                { invalidItemIds: [...new Set(invalidIds)] });
             return;
+        }
+
+        // Strategy-specific validation
+        if (strategy === "WRA_ABSOLUTE_GAP") {
+            // Every item must have both SOURCE and TARGET
+            const byItem = new Map<number, Set<string>>();
+            for (const r of rows) {
+                const set = byItem.get(r.itemId) ?? new Set();
+                set.add(r.channel);
+                byItem.set(r.itemId, set);
+            }
+            const missing = [...byItem.entries()].filter(([, ch]) => !ch.has("SOURCE") || !ch.has("TARGET"));
+            if (missing.length > 0) {
+                sendError(res, "WRA requires both SOURCE and TARGET for each item", 400, "MISSING_CHANNEL",
+                    { itemIds: missing.map(([id]) => id) });
+                return;
+            }
+        } else if (strategy === "NORMATIVE_360") {
+            // Reject TARGET rows
+            const targetRows = rows.filter((r) => r.channel === "TARGET");
+            if (targetRows.length > 0) {
+                sendError(res, "360 instruments do not accept TARGET responses", 400, "INVALID_CHANNEL",
+                    { itemIds: targetRows.map((r) => r.itemId) });
+                return;
+            }
         }
 
         // Create response + response items + scores in a transaction
@@ -90,20 +118,21 @@ export async function submitProjectResponse(req: Request, res: Response, next: N
             });
 
             await tx.responseItem.createMany({
-                data: data.items.map((i) => ({
+                data: rows.map((r) => ({
                     responseId: resp.id,
-                    itemId: i.itemId,
-                    value: i.value,
+                    itemId: r.itemId,
+                    channel: r.channel,
+                    value: r.value,
                 })),
             });
 
-            // Score the response (item scores, construct scores, global score)
+            // Score the response
             await scoreResponse(
                 tx,
                 resp.id,
-                project.instrumentVersion.scoringStrategy,
+                strategy,
                 project.instrumentVersion.items,
-                data.items,
+                rows,
             );
 
             return tx.instrumentResponse.findUnique({
