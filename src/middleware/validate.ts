@@ -76,6 +76,66 @@ export const addParticipantSchema = z.object({
     role: z.enum(["ADMIN", "PARTICIPANT"]).optional(),
 });
 
+// ── Admin schemas ──
+
+export const createInstrumentSchema = z.object({
+    name: z.string().min(1, "Instrument name is required"),
+    description: z.string().optional(),
+});
+
+export const updateInstrumentSchema = z.object({
+    name: z.string().min(1).optional(),
+    description: z.string().optional(),
+});
+
+export const createVersionSchema = z.object({
+    versionNumber: z.string().min(1, "Version number is required"),
+    scoringStrategy: z.enum(["WRA_ABSOLUTE_GAP", "NORMATIVE_360"]),
+});
+
+export const updateVersionSchema = z.object({
+    isActive: z.boolean().optional(),
+    scoringStrategy: z.enum(["WRA_ABSOLUTE_GAP", "NORMATIVE_360"]).optional(),
+});
+
+export const cloneVersionSchema = z.object({
+    versionNumber: z.string().min(1, "New version number is required"),
+});
+
+export const createConstructSchema = z.object({
+    name: z.string().min(1, "Construct name is required"),
+    description: z.string().optional(),
+});
+
+export const updateConstructSchema = z.object({
+    name: z.string().min(1).optional(),
+    description: z.string().optional(),
+});
+
+export const createItemSchema = z.object({
+    constructId: z.number().int().positive("Construct ID is required"),
+    text: z.string().min(1, "Item text is required"),
+    scaleType: z.enum(["LIKERT_5", "LIKERT_7", "TEXT", "YES_NO"]).optional(),
+    reverseScored: z.boolean().optional(),
+    behaviorPolarity: z.enum(["POSITIVE", "NEGATIVE"]).nullable().optional(),
+});
+
+export const updateItemSchema = z.object({
+    text: z.string().min(1).optional(),
+    scaleType: z.enum(["LIKERT_5", "LIKERT_7", "TEXT", "YES_NO"]).optional(),
+    reverseScored: z.boolean().optional(),
+    behaviorPolarity: z.enum(["POSITIVE", "NEGATIVE"]).nullable().optional(),
+});
+
+export const reorderItemsSchema = z.object({
+    itemIds: z.array(z.number().int().positive()).min(1, "At least one item ID required"),
+});
+
+export const addParticipantByEmailSchema = z.object({
+    email: z.string().email("Valid email is required"),
+    role: z.enum(["ADMIN", "PARTICIPANT"]).optional(),
+});
+
 // ── Generic validation middleware ──
 
 export function validate(schema: z.ZodSchema) {

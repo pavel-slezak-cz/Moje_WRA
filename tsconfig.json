@@ -16,5 +16,5 @@
     "types": ["node"]
   },
   "include": ["src"],
-  "exclude": ["node_modules", "dist", "sandbox-ui"]
+  "exclude": ["node_modules", "dist", "sandbox-ui", "admin-ui"]
 }

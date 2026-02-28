@@ -5,16 +5,18 @@ import { authRoutes } from "./routes/authRoutes";
 import { questionnaireRoutes } from "./routes/questionnaireRoutes";
 import { instrumentRoutes } from "./routes/instrumentRoutes";
 import { projectRoutes } from "./routes/projectRoutes";
+import { adminRoutes } from "./routes/adminRoutes";
 import { errorHandler } from "./middleware/errorHandler";
 import { sendError } from "./utils/response";
 
 const app = express();
 
-// Middleware
+// Middleware — support comma-separated CORS origins
+const allowedOrigins = env.CORS_ORIGIN.split(",").map((o) => o.trim());
 app.use(cors({
-    origin: env.CORS_ORIGIN,
+    origin: allowedOrigins.length === 1 ? allowedOrigins[0] : allowedOrigins,
     credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
 }));
 app.use(express.json());
@@ -28,6 +30,7 @@ app.get("/health", (_req, res) => {
 app.use("/auth", authRoutes);
 app.use("/instruments", instrumentRoutes);
 app.use("/projects", projectRoutes);
+app.use("/admin", adminRoutes);
 app.use("/questionnaires", questionnaireRoutes); // legacy
 
 // 404 catch-all
