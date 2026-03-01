@@ -72,29 +72,48 @@ export async function submitProjectResponse(req: Request, res: Response, next: N
         }
 
         const strategy = project.instrumentVersion.scoringStrategy;
-        const validItemIds = new Set(project.instrumentVersion.items.map((i) => i.id));
+        const expectedItemIds = new Set(project.instrumentVersion.items.map((i) => i.id));
 
-        // Validate that all submitted itemIds belong to this version
-        const invalidIds = rows.filter((r) => !validItemIds.has(r.itemId)).map((r) => r.itemId);
-        if (invalidIds.length > 0) {
+        // Reject unknown itemIds
+        const unknownIds = rows.filter((r) => !expectedItemIds.has(r.itemId)).map((r) => r.itemId);
+        if (unknownIds.length > 0) {
             sendError(res, "Some item IDs do not belong to this instrument version", 400, "INVALID_ITEMS",
-                { invalidItemIds: [...new Set(invalidIds)] });
+                { invalidItemIds: [...new Set(unknownIds)] });
             return;
         }
 
-        // Strategy-specific validation
+        // Build per-item channel sets and detect duplicates
+        const byItem = new Map<number, { SOURCE: number; TARGET: number }>();
+        for (const r of rows) {
+            const counts = byItem.get(r.itemId) ?? { SOURCE: 0, TARGET: 0 };
+            counts[r.channel]++;
+            byItem.set(r.itemId, counts);
+        }
+
+        const duplicateIds = [...byItem.entries()]
+            .filter(([, c]) => c.SOURCE > 1 || c.TARGET > 1)
+            .map(([id]) => id);
+        if (duplicateIds.length > 0) {
+            sendError(res, "Duplicate channel rows for the same item", 400, "DUPLICATE_CHANNEL",
+                { itemIds: duplicateIds });
+            return;
+        }
+
+        // Strategy-specific completeness validation
         if (strategy === "WRA_ABSOLUTE_GAP") {
-            // Every item must have both SOURCE and TARGET
-            const byItem = new Map<number, Set<string>>();
-            for (const r of rows) {
-                const set = byItem.get(r.itemId) ?? new Set();
-                set.add(r.channel);
-                byItem.set(r.itemId, set);
+            const missingIds: number[] = [];
+            const incompleteIds: number[] = [];
+            for (const itemId of expectedItemIds) {
+                const counts = byItem.get(itemId);
+                if (!counts) {
+                    missingIds.push(itemId);
+                } else if (counts.SOURCE !== 1 || counts.TARGET !== 1) {
+                    incompleteIds.push(itemId);
+                }
             }
-            const missing = [...byItem.entries()].filter(([, ch]) => !ch.has("SOURCE") || !ch.has("TARGET"));
-            if (missing.length > 0) {
-                sendError(res, "WRA requires both SOURCE and TARGET for each item", 400, "MISSING_CHANNEL",
-                    { itemIds: missing.map(([id]) => id) });
+            if (missingIds.length > 0 || incompleteIds.length > 0) {
+                sendError(res, "Incomplete submission", 400, "INCOMPLETE_SUBMISSION",
+                    { missing: { itemIds: missingIds }, invalid: { itemIds: incompleteIds } });
                 return;
             }
         } else if (strategy === "NORMATIVE_360") {
@@ -105,46 +124,69 @@ export async function submitProjectResponse(req: Request, res: Response, next: N
                     { itemIds: targetRows.map((r) => r.itemId) });
                 return;
             }
+            // All items must have exactly one SOURCE
+            const missingIds: number[] = [];
+            for (const itemId of expectedItemIds) {
+                const counts = byItem.get(itemId);
+                if (!counts || counts.SOURCE !== 1) {
+                    missingIds.push(itemId);
+                }
+            }
+            if (missingIds.length > 0) {
+                sendError(res, "Incomplete submission", 400, "INCOMPLETE_SUBMISSION",
+                    { missing: { itemIds: missingIds }, invalid: { itemIds: [] } });
+                return;
+            }
         }
 
         // Create response + response items + scores in a transaction
-        const response = await prisma.$transaction(async (tx) => {
-            const resp = await tx.instrumentResponse.create({
-                data: {
-                    userId: req.user!.userId,
-                    instrumentVersionId: project.instrumentVersionId,
-                    projectId,
-                },
-            });
+        let response;
+        try {
+            response = await prisma.$transaction(async (tx) => {
+                const resp = await tx.instrumentResponse.create({
+                    data: {
+                        userId: req.user!.userId,
+                        instrumentVersionId: project.instrumentVersionId,
+                        projectId,
+                    },
+                });
 
-            await tx.responseItem.createMany({
-                data: rows.map((r) => ({
-                    responseId: resp.id,
-                    itemId: r.itemId,
-                    channel: r.channel,
-                    value: r.value,
-                })),
-            });
+                await tx.responseItem.createMany({
+                    data: rows.map((r) => ({
+                        responseId: resp.id,
+                        itemId: r.itemId,
+                        channel: r.channel,
+                        value: r.value,
+                    })),
+                });
 
-            // Score the response
-            await scoreResponse(
-                tx,
-                resp.id,
-                strategy,
-                project.instrumentVersion.items,
-                rows,
-            );
+                // Score the response
+                await scoreResponse(
+                    tx,
+                    resp.id,
+                    strategy,
+                    project.instrumentVersion.items,
+                    rows,
+                );
 
-            return tx.instrumentResponse.findUnique({
-                where: { id: resp.id },
-                include: {
-                    items: true,
-                    itemScores: true,
-                    constructScores: { include: { construct: { select: { name: true } } } },
-                    globalScore: true,
-                },
+                return tx.instrumentResponse.findUnique({
+                    where: { id: resp.id },
+                    include: {
+                        items: true,
+                        itemScores: true,
+                        constructScores: { include: { construct: { select: { name: true } } } },
+                        globalScore: true,
+                    },
+                });
             });
-        });
+        } catch (err) {
+            // Scoring guard errors indicate internal inconsistency
+            if (err instanceof Error && err.message.startsWith("Scoring error:")) {
+                sendError(res, err.message, 500, "SERVER_ERROR");
+                return;
+            }
+            throw err;
+        }
 
         sendSuccess(res, response, 201);
     } catch (err) {
