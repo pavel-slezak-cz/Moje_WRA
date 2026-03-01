@@ -61,7 +61,8 @@ async function scoreWRA(tx: Tx, responseId: number, items: ItemMeta[], rows: Nor
     // Build scored values keyed by (itemId, channel)
     const scored = new Map<string, number>(); // key: "itemId:channel"
     for (const r of rows) {
-        const meta = itemMap.get(r.itemId)!;
+        const meta = itemMap.get(r.itemId);
+        if (!meta) throw new Error(`Scoring error: no metadata for item ${r.itemId}`);
         const val = meta.reverseScored ? reverseScore(r.value, meta.scaleType) : r.value;
         scored.set(`${r.itemId}:${r.channel}`, val);
     }
@@ -82,7 +83,8 @@ async function scoreWRA(tx: Tx, responseId: number, items: ItemMeta[], rows: Nor
     // Construct scores
     const constructGroups = new Map<number, { sourceVals: number[]; targetVals: number[]; absGaps: number[] }>();
     for (const isd of itemScoreData) {
-        const meta = itemMap.get(isd.itemId)!;
+        const meta = itemMap.get(isd.itemId);
+        if (!meta) throw new Error(`Scoring error: no metadata for item ${isd.itemId}`);
         const group = constructGroups.get(meta.constructId) ?? { sourceVals: [], targetVals: [], absGaps: [] };
         if (isd.sourceValue !== null) group.sourceVals.push(isd.sourceValue);
         if (isd.targetValue !== null) group.targetVals.push(isd.targetValue);
@@ -128,29 +130,36 @@ async function score360(tx: Tx, responseId: number, items: ItemMeta[], rows: Nor
     const normalizedValues = new Map<number, number>();
 
     for (const r of rows) {
-        const meta = itemMap.get(r.itemId)!;
+        const meta = itemMap.get(r.itemId);
+        if (!meta) throw new Error(`Scoring error: no metadata for item ${r.itemId}`);
         // NEGATIVE polarity: flip 0↔1
         const normalized = meta.behaviorPolarity === "NEGATIVE" ? 1 - r.value : r.value;
         normalizedValues.set(r.itemId, normalized);
     }
 
     // Item scores — store normalized in sourceValue, no target/gap
-    const itemScoreData = items.map((item) => ({
-        responseId,
-        itemId: item.id,
-        sourceValue: normalizedValues.get(item.id)!,
-        targetValue: null,
-        gapValue: null,
-        absoluteGapValue: null,
-    }));
+    const itemScoreData = items.map((item) => {
+        const v = normalizedValues.get(item.id);
+        if (v == null) throw new Error(`Scoring error: missing normalized value for item ${item.id}`);
+        return {
+            responseId,
+            itemId: item.id,
+            sourceValue: v,
+            targetValue: null,
+            gapValue: null,
+            absoluteGapValue: null,
+        };
+    });
 
     await tx.itemScore.createMany({ data: itemScoreData });
 
     // Construct scores — mean of normalized values
     const constructGroups = new Map<number, number[]>();
     for (const item of items) {
+        const v = normalizedValues.get(item.id);
+        if (v == null) throw new Error(`Scoring error: missing normalized value for item ${item.id}`);
         const arr = constructGroups.get(item.constructId) ?? [];
-        arr.push(normalizedValues.get(item.id)!);
+        arr.push(v);
         constructGroups.set(item.constructId, arr);
     }
 
