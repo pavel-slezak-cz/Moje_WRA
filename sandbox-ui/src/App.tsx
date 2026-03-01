@@ -2,6 +2,48 @@ import { useState } from "react";
 
 const API = "http://localhost:3001";
 
+// ── Scale metadata (inline copy from backend scaleConfig.ts) ──
+
+interface ScaleMeta { min: number; max: number; values: number[] }
+
+const SCALE_META: Record<string, ScaleMeta> = {
+    YES_NO:   { min: 0, max: 1,  values: [0, 1] },
+    LIKERT_5: { min: 1, max: 5,  values: [1, 2, 3, 4, 5] },
+    SCALE_3:  { min: 1, max: 3,  values: [1, 2, 3] },
+    LIKERT_7: { min: 1, max: 7,  values: [1, 2, 3, 4, 5, 6, 7] },
+    SCALE_6:  { min: 1, max: 6,  values: [1, 2, 3, 4, 5, 6] },
+    SCALE_10: { min: 1, max: 10, values: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] },
+};
+
+// Labels keyed by "LABEL_SET:SCALE_TYPE"
+const LABEL_MAP: Record<string, Record<number, string>> = {
+    "AGREEMENT:SCALE_3":  { 1: "Nesouhlasím", 2: "Neutrální", 3: "Souhlasím" },
+    "AGREEMENT:LIKERT_5": { 1: "Silně nesouhlasím", 2: "Nesouhlasím", 3: "Neutrální", 4: "Souhlasím", 5: "Silně souhlasím" },
+    "AGREEMENT:SCALE_6":  { 1: "Silně nesouhlasím", 2: "Nesouhlasím", 3: "Spíše nesouhlasím", 4: "Spíše souhlasím", 5: "Souhlasím", 6: "Silně souhlasím" },
+    "AGREEMENT:LIKERT_7": { 1: "Silně nesouhlasím", 2: "Nesouhlasím", 3: "Spíše nesouhlasím", 4: "Neutrální", 5: "Spíše souhlasím", 6: "Souhlasím", 7: "Silně souhlasím" },
+    "FREQUENCY:SCALE_3":  { 1: "Nikdy", 2: "Někdy", 3: "Vždy" },
+    "FREQUENCY:LIKERT_5": { 1: "Nikdy", 2: "Zřídka", 3: "Někdy", 4: "Často", 5: "Vždy" },
+    "FREQUENCY:SCALE_6":  { 1: "Nikdy", 2: "Velmi zřídka", 3: "Zřídka", 4: "Někdy", 5: "Často", 6: "Vždy" },
+    "FREQUENCY:LIKERT_7": { 1: "Nikdy", 2: "Velmi zřídka", 3: "Zřídka", 4: "Někdy", 5: "Často", 6: "Velmi často", 7: "Vždy" },
+    "QUALITY:SCALE_3":  { 1: "Špatné", 2: "Průměrné", 3: "Výborné" },
+    "QUALITY:LIKERT_5": { 1: "Velmi špatné", 2: "Špatné", 3: "Průměrné", 4: "Dobré", 5: "Výborné" },
+    "QUALITY:SCALE_6":  { 1: "Velmi špatné", 2: "Špatné", 3: "Podprůměrné", 4: "Průměrné", 5: "Dobré", 6: "Výborné" },
+    "QUALITY:LIKERT_7": { 1: "Velmi špatné", 2: "Špatné", 3: "Podprůměrné", 4: "Průměrné", 5: "Nadprůměrné", 6: "Dobré", 7: "Výborné" },
+    "IMPORTANCE:SCALE_3":  { 1: "Nedůležité", 2: "Neutrální", 3: "Důležité" },
+    "IMPORTANCE:LIKERT_5": { 1: "Nedůležité", 2: "Málo důležité", 3: "Neutrální", 4: "Důležité", 5: "Velmi důležité" },
+    "IMPORTANCE:SCALE_6":  { 1: "Zcela nedůležité", 2: "Nedůležité", 3: "Málo důležité", 4: "Poměrně důležité", 5: "Důležité", 6: "Velmi důležité" },
+    "IMPORTANCE:LIKERT_7": { 1: "Zcela nedůležité", 2: "Nedůležité", 3: "Málo důležité", 4: "Neutrální", 5: "Poměrně důležité", 6: "Důležité", 7: "Velmi důležité" },
+};
+
+function getScaleOptions(scaleType: string): number[] {
+    return SCALE_META[scaleType]?.values ?? SCALE_META.LIKERT_5.values;
+}
+
+function getLabel(labelSet: string | null | undefined, scaleType: string, value: number): string | undefined {
+    if (!labelSet) return undefined;
+    return LABEL_MAP[`${labelSet}:${scaleType}`]?.[value];
+}
+
 const api = (path: string, token?: string, body?: unknown) =>
     fetch(`${API}${path}`, {
         method: body ? "POST" : "GET",
@@ -173,13 +215,7 @@ export default function App() {
     const totalItems = allItems.length;
     const currentItem = allItems[currentIndex];
 
-    const isYesNo = currentItem?.scaleType === "YES_NO";
-    const opts = isYesNo
-        ? [0, 1]
-        : Array.from(
-            { length: currentItem?.scaleType === "LIKERT_7" ? 7 : 5 },
-            (_, i) => i + 1,
-        );
+    const opts = currentItem ? getScaleOptions(currentItem.scaleType) : [];
 
     const allAnswered = allItems.every((it: Any) => {
         if (isWRA) {
@@ -353,61 +389,70 @@ export default function App() {
                                     <div style={{ marginBottom: 12 }}>
                                         <strong>Jak to je (SOURCE):</strong>
                                         <div style={{ marginTop: 4 }}>
-                                            {opts.map((v) => (
-                                                <label key={v} style={{ marginRight: 12 }}>
-                                                    <input
-                                                        type="radio"
-                                                        name={`source-${currentItem.id}`}
-                                                        checked={wraAnswers[currentItem.id]?.source === v}
-                                                        onChange={() =>
-                                                            setWraAnswers((a) => ({
-                                                                ...a,
-                                                                [currentItem.id]: { ...a[currentItem.id], source: v },
-                                                            }))
-                                                        }
-                                                    />
-                                                    {v}
-                                                </label>
-                                            ))}
+                                            {opts.map((v) => {
+                                                const lbl = getLabel(currentItem.labelSet, currentItem.scaleType, v);
+                                                return (
+                                                    <label key={v} style={{ marginRight: 12 }}>
+                                                        <input
+                                                            type="radio"
+                                                            name={`source-${currentItem.id}`}
+                                                            checked={wraAnswers[currentItem.id]?.source === v}
+                                                            onChange={() =>
+                                                                setWraAnswers((a) => ({
+                                                                    ...a,
+                                                                    [currentItem.id]: { ...a[currentItem.id], source: v },
+                                                                }))
+                                                            }
+                                                        />
+                                                        {lbl ? `${v} – ${lbl}` : v}
+                                                    </label>
+                                                );
+                                            })}
                                         </div>
                                     </div>
                                     <div>
                                         <strong>Jak bych si přál/a (TARGET):</strong>
                                         <div style={{ marginTop: 4 }}>
-                                            {opts.map((v) => (
-                                                <label key={v} style={{ marginRight: 12 }}>
-                                                    <input
-                                                        type="radio"
-                                                        name={`target-${currentItem.id}`}
-                                                        checked={wraAnswers[currentItem.id]?.target === v}
-                                                        onChange={() =>
-                                                            setWraAnswers((a) => ({
-                                                                ...a,
-                                                                [currentItem.id]: { ...a[currentItem.id], target: v },
-                                                            }))
-                                                        }
-                                                    />
-                                                    {v}
-                                                </label>
-                                            ))}
+                                            {opts.map((v) => {
+                                                const lbl = getLabel(currentItem.labelSet, currentItem.scaleType, v);
+                                                return (
+                                                    <label key={v} style={{ marginRight: 12 }}>
+                                                        <input
+                                                            type="radio"
+                                                            name={`target-${currentItem.id}`}
+                                                            checked={wraAnswers[currentItem.id]?.target === v}
+                                                            onChange={() =>
+                                                                setWraAnswers((a) => ({
+                                                                    ...a,
+                                                                    [currentItem.id]: { ...a[currentItem.id], target: v },
+                                                                }))
+                                                            }
+                                                        />
+                                                        {lbl ? `${v} – ${lbl}` : v}
+                                                    </label>
+                                                );
+                                            })}
                                         </div>
                                     </div>
                                 </div>
                             ) : (
                                 <div>
-                                    {opts.map((v) => (
-                                        <label key={v} style={{ marginRight: 12 }}>
-                                            <input
-                                                type="radio"
-                                                name={`item-${currentItem.id}`}
-                                                checked={answers360[currentItem.id] === v}
-                                                onChange={() =>
-                                                    setAnswers360((a) => ({ ...a, [currentItem.id]: v }))
-                                                }
-                                            />
-                                            {v}
-                                        </label>
-                                    ))}
+                                    {opts.map((v) => {
+                                        const lbl = getLabel(currentItem.labelSet, currentItem.scaleType, v);
+                                        return (
+                                            <label key={v} style={{ marginRight: 12 }}>
+                                                <input
+                                                    type="radio"
+                                                    name={`item-${currentItem.id}`}
+                                                    checked={answers360[currentItem.id] === v}
+                                                    onChange={() =>
+                                                        setAnswers360((a) => ({ ...a, [currentItem.id]: v }))
+                                                    }
+                                                />
+                                                {lbl ? `${v} – ${lbl}` : v}
+                                            </label>
+                                        );
+                                    })}
                                 </div>
                             )}
                         </div>

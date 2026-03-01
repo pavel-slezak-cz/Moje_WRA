@@ -1,8 +1,9 @@
 import type { PrismaClient } from "../generated/prisma/client";
 import type { ScaleType, ScoringStrategy, BehaviorPolarity } from "../generated/prisma/enums";
 import type { NormalizedRow } from "../middleware/validate";
+import { SCALE_META, normalizeValue, normalizeGap } from "../config/scaleConfig";
 
-const SCORING_MODEL_VERSION = "1.0";
+const SCORING_MODEL_VERSION = "1.1";
 
 // ── Types ──
 
@@ -18,14 +19,9 @@ type Tx = Parameters<Parameters<PrismaClient["$transaction"]>[0]>[0];
 
 // ── Reverse scoring ──
 
-const REVERSE_MAX: Record<string, number> = {
-    LIKERT_5: 6,
-    LIKERT_7: 8,
-};
-
 export function reverseScore(value: number, scaleType: ScaleType): number {
-    const max = REVERSE_MAX[scaleType];
-    return max ? max - value : value;
+    const meta = SCALE_META[scaleType];
+    return meta?.reverseMax ? meta.reverseMax - value : value;
 }
 
 // ── Helpers ──
@@ -71,34 +67,60 @@ async function scoreWRA(tx: Tx, responseId: number, items: ItemMeta[], rows: Nor
     const uniqueItemIds = [...new Set(rows.map((r) => r.itemId))];
 
     const itemScoreData = uniqueItemIds.map((itemId) => {
+        const meta = itemMap.get(itemId);
         const sv = scored.get(`${itemId}:SOURCE`) ?? null;
         const tv = scored.get(`${itemId}:TARGET`) ?? null;
         const gapValue = sv !== null && tv !== null ? tv - sv : null;
         const absoluteGapValue = gapValue !== null ? Math.abs(gapValue) : null;
-        return { responseId, itemId, sourceValue: sv, targetValue: tv, gapValue, absoluteGapValue };
+
+        // Normalized values — based on scored (post-reverse) values for correct construct aggregation
+        const scaleType = meta?.scaleType ?? "LIKERT_5";
+        const normalizedSource = sv !== null ? normalizeValue(sv, scaleType) : null;
+        const normalizedTarget = tv !== null ? normalizeValue(tv, scaleType) : null;
+        const normalizedGapVal = sv !== null && tv !== null ? normalizeGap(sv, tv, scaleType) : null;
+
+        return {
+            responseId, itemId, sourceValue: sv, targetValue: tv, gapValue, absoluteGapValue,
+            normalizedSource, normalizedTarget, normalizedGap: normalizedGapVal,
+        };
     });
 
     await tx.itemScore.createMany({ data: itemScoreData });
 
     // Construct scores
-    const constructGroups = new Map<number, { sourceVals: number[]; targetVals: number[]; absGaps: number[] }>();
+    const constructGroups = new Map<number, {
+        sourceVals: number[]; targetVals: number[]; absGaps: number[];
+        normSourceVals: number[]; normTargetVals: number[]; normGapVals: number[];
+    }>();
     for (const isd of itemScoreData) {
         const meta = itemMap.get(isd.itemId);
         if (!meta) throw new Error(`Scoring error: no metadata for item ${isd.itemId}`);
-        const group = constructGroups.get(meta.constructId) ?? { sourceVals: [], targetVals: [], absGaps: [] };
+        const group = constructGroups.get(meta.constructId) ?? {
+            sourceVals: [], targetVals: [], absGaps: [],
+            normSourceVals: [], normTargetVals: [], normGapVals: [],
+        };
         if (isd.sourceValue !== null) group.sourceVals.push(isd.sourceValue);
         if (isd.targetValue !== null) group.targetVals.push(isd.targetValue);
         if (isd.absoluteGapValue !== null) group.absGaps.push(isd.absoluteGapValue);
+        if (isd.normalizedSource !== null) group.normSourceVals.push(isd.normalizedSource);
+        if (isd.normalizedTarget !== null) group.normTargetVals.push(isd.normalizedTarget);
+        if (isd.normalizedGap !== null) group.normGapVals.push(isd.normalizedGap);
         constructGroups.set(meta.constructId, group);
     }
 
     const constructScoreData = Array.from(constructGroups.entries()).map(
-        ([constructId, { sourceVals, targetVals, absGaps }]) => {
+        ([constructId, { sourceVals, targetVals, absGaps, normSourceVals, normTargetVals, normGapVals }]) => {
             const sourceMean = mean(sourceVals);
             const targetMean = mean(targetVals);
             const gapMean = sourceMean !== null && targetMean !== null ? targetMean - sourceMean : null;
             const meanAbsoluteGap = mean(absGaps);
-            return { responseId, constructId, sourceMean, targetMean, gapMean, meanAbsoluteGap, scoringModelVersion: SCORING_MODEL_VERSION };
+            return {
+                responseId, constructId, sourceMean, targetMean, gapMean, meanAbsoluteGap,
+                normalizedSourceMean: mean(normSourceVals),
+                normalizedTargetMean: mean(normTargetVals),
+                normalizedGapMean: mean(normGapVals),
+                scoringModelVersion: SCORING_MODEL_VERSION,
+            };
         },
     );
 
@@ -111,6 +133,10 @@ async function scoreWRA(tx: Tx, responseId: number, items: ItemMeta[], rows: Nor
     const globalSourceMean = mean(allSource);
     const globalTargetMean = mean(allTarget);
 
+    const allNormSource = constructScoreData.map((c) => c.normalizedSourceMean).filter((v): v is number => v !== null);
+    const allNormTarget = constructScoreData.map((c) => c.normalizedTargetMean).filter((v): v is number => v !== null);
+    const allNormGap = constructScoreData.map((c) => c.normalizedGapMean).filter((v): v is number => v !== null);
+
     await tx.globalScore.create({
         data: {
             responseId,
@@ -118,6 +144,9 @@ async function scoreWRA(tx: Tx, responseId: number, items: ItemMeta[], rows: Nor
             globalTargetMean,
             globalGapMean: globalSourceMean !== null && globalTargetMean !== null ? globalTargetMean - globalSourceMean : null,
             globalMeanAbsoluteGap: mean(allAbsGap),
+            normalizedGlobalSourceMean: mean(allNormSource),
+            normalizedGlobalTargetMean: mean(allNormTarget),
+            normalizedGlobalGapMean: mean(allNormGap),
             scoringModelVersion: SCORING_MODEL_VERSION,
         },
     });

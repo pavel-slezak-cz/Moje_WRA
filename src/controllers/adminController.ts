@@ -231,6 +231,7 @@ export async function createItem(req: Request, res: Response, next: NextFunction
                 constructId: data.constructId,
                 text: data.text,
                 scaleType: data.scaleType ?? "LIKERT_5",
+                labelSet: data.labelSet ?? null,
                 reverseScored: data.reverseScored ?? false,
                 behaviorPolarity: data.behaviorPolarity ?? null,
                 position: (maxPos._max.position ?? 0) + 1,

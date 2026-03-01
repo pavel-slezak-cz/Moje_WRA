@@ -112,17 +112,22 @@ export const updateConstructSchema = z.object({
     description: z.string().optional(),
 });
 
+const scaleTypeEnum = z.enum(["LIKERT_5", "LIKERT_7", "TEXT", "YES_NO", "SCALE_3", "SCALE_6", "SCALE_10"]);
+const labelSetEnum = z.enum(["AGREEMENT", "FREQUENCY", "QUALITY", "IMPORTANCE"]);
+
 export const createItemSchema = z.object({
     constructId: z.number().int().positive("Construct ID is required"),
     text: z.string().min(1, "Item text is required"),
-    scaleType: z.enum(["LIKERT_5", "LIKERT_7", "TEXT", "YES_NO"]).optional(),
+    scaleType: scaleTypeEnum.optional(),
+    labelSet: labelSetEnum.nullable().optional(),
     reverseScored: z.boolean().optional(),
     behaviorPolarity: z.enum(["POSITIVE", "NEGATIVE"]).nullable().optional(),
 });
 
 export const updateItemSchema = z.object({
     text: z.string().min(1).optional(),
-    scaleType: z.enum(["LIKERT_5", "LIKERT_7", "TEXT", "YES_NO"]).optional(),
+    scaleType: scaleTypeEnum.optional(),
+    labelSet: labelSetEnum.nullable().optional(),
     reverseScored: z.boolean().optional(),
     behaviorPolarity: z.enum(["POSITIVE", "NEGATIVE"]).nullable().optional(),
 });

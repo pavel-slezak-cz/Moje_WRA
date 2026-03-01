@@ -518,6 +518,7 @@ function CreateItemForm({ token, versionId, onCreated }: { token: string; versio
     const [text, setText] = useState("");
     const [constructId, setConstructId] = useState("");
     const [scale, setScale] = useState("LIKERT_5");
+    const [labelSet, setLabelSet] = useState("");
     const [constructs, setConstructs] = useState<Any[]>([]);
     const [err, setErr] = useState("");
 
@@ -531,7 +532,9 @@ function CreateItemForm({ token, versionId, onCreated }: { token: string; versio
         setErr("");
         const cid = parseInt(constructId, 10);
         if (isNaN(cid)) return setErr("Select a construct");
-        const res = await api(`/admin/versions/${versionId}/items`, token, { body: { constructId: cid, text, scaleType: scale } });
+        const body: Any = { constructId: cid, text, scaleType: scale };
+        if (labelSet) body.labelSet = labelSet;
+        const res = await api(`/admin/versions/${versionId}/items`, token, { body });
         if (!res.success) return setErr(res.error.message);
         setText(""); onCreated();
     }
@@ -547,9 +550,20 @@ function CreateItemForm({ token, versionId, onCreated }: { token: string; versio
                     ))}
                 </select>
                 <select value={scale} onChange={(e) => setScale(e.target.value)}>
-                    <option value="LIKERT_5">LIKERT_5</option>
-                    <option value="LIKERT_7">LIKERT_7</option>
-                    <option value="YES_NO">YES_NO</option>
+                    <option value="YES_NO">Yes / No (0–1)</option>
+                    <option value="SCALE_3">Scale 1–3</option>
+                    <option value="LIKERT_5">Likert 1–5</option>
+                    <option value="SCALE_6">Scale 1–6</option>
+                    <option value="LIKERT_7">Likert 1–7</option>
+                    <option value="SCALE_10">Scale 1–10</option>
+                    <option value="TEXT">Text (no scoring)</option>
+                </select>
+                <select value={labelSet} onChange={(e) => setLabelSet(e.target.value)}>
+                    <option value="">— Label Set (optional) —</option>
+                    <option value="AGREEMENT">Agreement</option>
+                    <option value="FREQUENCY">Frequency</option>
+                    <option value="QUALITY">Quality</option>
+                    <option value="IMPORTANCE">Importance</option>
                 </select>
                 <button onClick={submit}>Add</button>
             </div>

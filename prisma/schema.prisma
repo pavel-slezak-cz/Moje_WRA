@@ -15,6 +15,16 @@ enum ScaleType {
   LIKERT_7
   TEXT
   YES_NO
+  SCALE_3
+  SCALE_6
+  SCALE_10
+}
+
+enum LabelSet {
+  AGREEMENT
+  FREQUENCY
+  QUALITY
+  IMPORTANCE
 }
 
 enum MeasurementType {
@@ -134,6 +144,7 @@ model Item {
   constructId         Int               @map("construct_id")
   text                String            @db.Text
   scaleType           ScaleType         @default(LIKERT_5) @map("scale_type")
+  labelSet            LabelSet?         @map("label_set")
   reverseScored       Boolean           @default(false) @map("reverse_scored")
   measurementType     MeasurementType   @default(SOURCE) @map("measurement_type")
   gapGroupId          String?           @map("gap_group_id")
@@ -205,7 +216,7 @@ model ResponseItem {
   channel    ResponseChannel @default(SOURCE)
   value      Int
 
-  response InstrumentResponse @relation(fields: [responseId], references: [id])
+  response InstrumentResponse @relation(fields: [responseId], references: [id], onDelete: Cascade)
   item     Item               @relation(fields: [itemId], references: [id])
 
   @@unique([responseId, itemId, channel])
@@ -222,6 +233,9 @@ model ItemScore {
   targetValue      Int?   @map("target_value")
   gapValue         Float? @map("gap_value")
   absoluteGapValue Float? @map("absolute_gap_value")
+  normalizedSource Float? @map("normalized_source")
+  normalizedTarget Float? @map("normalized_target")
+  normalizedGap    Float? @map("normalized_gap")
 
   response InstrumentResponse @relation(fields: [responseId], references: [id])
   item     Item               @relation(fields: [itemId], references: [id])
@@ -231,15 +245,18 @@ model ItemScore {
 }
 
 model ConstructScore {
-  id                  Int      @id @default(autoincrement())
-  responseId          Int      @map("response_id")
-  constructId         Int      @map("construct_id")
-  sourceMean          Float?   @map("source_mean")
-  targetMean          Float?   @map("target_mean")
-  gapMean             Float?   @map("gap_mean")
-  meanAbsoluteGap     Float?   @map("mean_absolute_gap")
-  scoringModelVersion String   @default("1.0") @map("scoring_model_version")
-  computedAt          DateTime @default(now()) @map("computed_at")
+  id                    Int      @id @default(autoincrement())
+  responseId            Int      @map("response_id")
+  constructId           Int      @map("construct_id")
+  sourceMean            Float?   @map("source_mean")
+  targetMean            Float?   @map("target_mean")
+  gapMean               Float?   @map("gap_mean")
+  meanAbsoluteGap       Float?   @map("mean_absolute_gap")
+  normalizedSourceMean  Float?   @map("normalized_source_mean")
+  normalizedTargetMean  Float?   @map("normalized_target_mean")
+  normalizedGapMean     Float?   @map("normalized_gap_mean")
+  scoringModelVersion   String   @default("1.0") @map("scoring_model_version")
+  computedAt            DateTime @default(now()) @map("computed_at")
 
   response  InstrumentResponse @relation(fields: [responseId], references: [id])
   construct Construct          @relation(fields: [constructId], references: [id])
@@ -249,14 +266,17 @@ model ConstructScore {
 }
 
 model GlobalScore {
-  id                    Int      @id @default(autoincrement())
-  responseId            Int      @unique @map("response_id")
-  globalSourceMean      Float?   @map("global_source_mean")
-  globalTargetMean      Float?   @map("global_target_mean")
-  globalGapMean         Float?   @map("global_gap_mean")
-  globalMeanAbsoluteGap Float?   @map("global_mean_absolute_gap")
-  scoringModelVersion   String   @default("1.0") @map("scoring_model_version")
-  computedAt            DateTime @default(now()) @map("computed_at")
+  id                          Int      @id @default(autoincrement())
+  responseId                  Int      @unique @map("response_id")
+  globalSourceMean            Float?   @map("global_source_mean")
+  globalTargetMean            Float?   @map("global_target_mean")
+  globalGapMean               Float?   @map("global_gap_mean")
+  globalMeanAbsoluteGap       Float?   @map("global_mean_absolute_gap")
+  normalizedGlobalSourceMean  Float?   @map("normalized_global_source_mean")
+  normalizedGlobalTargetMean  Float?   @map("normalized_global_target_mean")
+  normalizedGlobalGapMean     Float?   @map("normalized_global_gap_mean")
+  scoringModelVersion         String   @default("1.0") @map("scoring_model_version")
+  computedAt                  DateTime @default(now()) @map("computed_at")
 
   response InstrumentResponse @relation(fields: [responseId], references: [id])
 
