@@ -30,12 +30,14 @@ adminRoutes.patch("/constructs/:id", admin.updateConstruct);
 // ── Items ──
 adminRoutes.post("/versions/:id/items", admin.createItem);
 adminRoutes.patch("/items/:id", admin.updateItem);
+adminRoutes.delete("/items/:id", admin.deleteItem);
 adminRoutes.post("/versions/:id/items/reorder", admin.reorderItems);
 
 // ── Projects ──
 adminRoutes.get("/projects", admin.listProjects);
 adminRoutes.post("/projects", admin.createProject);
 adminRoutes.get("/projects/:id", admin.getProject);
+adminRoutes.delete("/projects/:id", admin.deleteProject);
 adminRoutes.post("/projects/:id/participants", admin.addProjectParticipant);
 
 // ── DB Inspector (gated) ──

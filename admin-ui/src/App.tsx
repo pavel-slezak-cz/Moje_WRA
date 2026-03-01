@@ -23,6 +23,7 @@ type Screen =
     | "instruments"
     | "instrument-detail"
     | "version-detail"
+    | "constructs"
     | "projects"
     | "project-detail"
     | "inspector"
@@ -54,6 +55,7 @@ export default function App() {
     const [currentVersion, setCurrentVersion] = useState<Any>(null);
     const [projects, setProjects] = useState<Any[]>([]);
     const [currentProject, setCurrentProject] = useState<Any>(null);
+    const [constructs, setConstructs] = useState<Any[]>([]);
     const [inspectorOverview, setInspectorOverview] = useState<Any>(null);
     const [inspectorResponses, setInspectorResponses] = useState<Any[]>([]);
     const [inspectorResponse, setInspectorResponse] = useState<Any>(null);
@@ -94,6 +96,12 @@ export default function App() {
         setScreen("version-detail");
     }
 
+    // ── Constructs ──
+    const loadConstructs = useCallback(async () => {
+        const res = await api("/admin/constructs", token);
+        if (res.success) setConstructs(res.data);
+    }, [token]);
+
     // ── Projects ──
     const loadProjects = useCallback(async () => {
         const res = await api("/admin/projects", token);
@@ -124,9 +132,10 @@ export default function App() {
     // ── Effects ──
     useEffect(() => {
         if (screen === "instruments" && token) loadInstruments();
+        if (screen === "constructs" && token) loadConstructs();
         if (screen === "projects" && token) loadProjects();
         if (screen === "inspector" && token) loadProjects();
-    }, [screen, token, loadInstruments, loadProjects]);
+    }, [screen, token, loadInstruments, loadConstructs, loadProjects]);
 
     // ── Login ──
     if (screen === "login") {
@@ -148,6 +157,7 @@ export default function App() {
         <div style={S.nav}>
             <button onClick={() => setScreen("dashboard")} style={S.btn}><b>Dashboard</b></button>
             <button onClick={() => setScreen("instruments")} style={S.btn}>Instruments</button>
+            <button onClick={() => setScreen("constructs")} style={S.btn}>Constructs</button>
             <button onClick={() => setScreen("projects")} style={S.btn}>Projects</button>
             {inspectorEnabled && <button onClick={() => setScreen("inspector")} style={S.btn}>🔍 DB Inspector</button>}
             <button onClick={logout} style={{ ...S.btn, marginLeft: "auto" }}>Logout</button>
@@ -180,6 +190,28 @@ export default function App() {
                             <td>{inst.description ?? "—"}</td>
                             <td>{inst.versions?.length ?? 0}</td>
                             <td><button onClick={() => openInstrument(inst.id)}>Open</button></td>
+                        </tr>
+                    ))}
+                    </tbody>
+                </table>
+            </div>
+        );
+    }
+
+    // ── Constructs List ──
+    if (screen === "constructs") {
+        return (
+            <div style={S.page}><Nav />
+                <h2>Constructs</h2>
+                <CreateConstructForm token={token} onCreated={loadConstructs} />
+                <table style={S.tbl} border={1} cellPadding={6}>
+                    <thead><tr><th>ID</th><th>Name</th><th>Description</th></tr></thead>
+                    <tbody>
+                    {constructs.map((c: Any) => (
+                        <tr key={c.id}>
+                            <td>{c.id}</td>
+                            <td>{c.name}</td>
+                            <td>{c.description ?? "—"}</td>
                         </tr>
                     ))}
                     </tbody>
@@ -240,7 +272,10 @@ export default function App() {
                             <td>{item.scaleType}</td>
                             <td>{item.reverseScored ? "R" : ""}</td>
                             <td>{item.behaviorPolarity ?? ""}</td>
-                            <td><EditItemButton token={token} item={item} onUpdated={() => openVersion(ver.id)} /></td>
+                            <td>
+                                <EditItemButton token={token} item={item} onUpdated={() => openVersion(ver.id)} />{" "}
+                                <DeleteItemButton token={token} item={item} onDeleted={() => openVersion(ver.id)} />
+                            </td>
                         </tr>
                     ))}
                     </tbody>
@@ -298,6 +333,19 @@ export default function App() {
                     </tbody>
                 </table>
                 <p style={{ color: "#666", marginTop: 8 }}>Responses: {p._count?.responses}</p>
+                <div style={{ marginTop: 24, borderTop: "1px solid #ccc", paddingTop: 16 }}>
+                    <button
+                        style={{ color: "#fff", background: "#a00", border: "none", padding: "8px 16px", cursor: "pointer", borderRadius: 4 }}
+                        onClick={async () => {
+                            if (!confirm(`Delete project "${p.name}" and all its responses, scores, and participants? This cannot be undone.`)) return;
+                            const res = await api(`/admin/projects/${p.id}`, token, { method: "DELETE" });
+                            if (res.success) { await loadProjects(); setScreen("projects"); }
+                            else alert(res.error.message);
+                        }}
+                    >
+                        Delete Project
+                    </button>
+                </div>
             </div>
         );
     }
@@ -454,6 +502,30 @@ export default function App() {
 
 // ── Inline sub-components ──
 
+function CreateConstructForm({ token, onCreated }: { token: string; onCreated: () => void }) {
+    const [name, setName] = useState("");
+    const [desc, setDesc] = useState("");
+    const [err, setErr] = useState("");
+    async function submit() {
+        setErr("");
+        if (!name.trim()) return setErr("Name is required");
+        const res = await api("/admin/constructs", token, { body: { name, description: desc || undefined } });
+        if (!res.success) return setErr(res.error.message);
+        setName(""); setDesc(""); onCreated();
+    }
+    return (
+        <div style={{ marginBottom: 16, padding: 12, background: "#f5f5f5", borderRadius: 6 }}>
+            <b>Create Construct</b>
+            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                <input placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
+                <input placeholder="Description (optional)" value={desc} onChange={(e) => setDesc(e.target.value)} />
+                <button onClick={submit}>Create</button>
+            </div>
+            {err && <div style={S.err}>{err}</div>}
+        </div>
+    );
+}
+
 function CreateInstrumentForm({ token, onCreated }: { token: string; onCreated: () => void }) {
     const [name, setName] = useState("");
     const [desc, setDesc] = useState("");
@@ -595,6 +667,16 @@ function EditItemButton({ token, item, onUpdated }: { token: string; item: Any; 
         else alert(res.error.message);
     }
     return <button onClick={edit}>Edit</button>;
+}
+
+function DeleteItemButton({ token, item, onDeleted }: { token: string; item: Any; onDeleted: () => void }) {
+    async function del() {
+        if (!confirm(`Delete item #${item.position} from this version? This cannot be undone.`)) return;
+        const res = await api(`/admin/items/${item.id}`, token, { method: "DELETE" });
+        if (res.success) onDeleted();
+        else alert(res.error.message);
+    }
+    return <button onClick={del} style={{ color: "#a00" }}>✕</button>;
 }
 
 function CreateProjectForm({ token, onCreated }: { token: string; onCreated: () => void }) {

@@ -378,6 +378,66 @@ export async function getProject(req: Request, res: Response, next: NextFunction
     }
 }
 
+export async function deleteProject(req: Request, res: Response, next: NextFunction) {
+    try {
+        const id = parseInt(req.params.id as string, 10);
+        if (isNaN(id)) { sendError(res, "Invalid ID", 400, "INVALID_ID"); return; }
+
+        const project = await prisma.project.findUnique({ where: { id } });
+        if (!project) { sendError(res, "Project not found", 404, "NOT_FOUND"); return; }
+        if (project.ownerUserId !== req.user!.userId) {
+            sendError(res, "Not project owner", 403, "INSUFFICIENT_ROLE"); return;
+        }
+
+        await prisma.$transaction(async (tx) => {
+            // Collect response IDs for this project
+            const responses = await tx.instrumentResponse.findMany({
+                where: { projectId: id },
+                select: { id: true },
+            });
+            const responseIds = responses.map((r) => r.id);
+
+            if (responseIds.length > 0) {
+                // Delete scores in dependency order
+                await tx.globalScore.deleteMany({ where: { responseId: { in: responseIds } } });
+                await tx.constructScore.deleteMany({ where: { responseId: { in: responseIds } } });
+                await tx.itemScore.deleteMany({ where: { responseId: { in: responseIds } } });
+                // ResponseItems cascade from InstrumentResponse deletion
+            }
+
+            await tx.instrumentResponse.deleteMany({ where: { projectId: id } });
+            await tx.projectParticipant.deleteMany({ where: { projectId: id } });
+            await tx.project.delete({ where: { id } });
+        });
+
+        sendSuccess(res, { deleted: true });
+    } catch (err) {
+        next(err);
+    }
+}
+
+export async function deleteItem(req: Request, res: Response, next: NextFunction) {
+    try {
+        const id = parseInt(req.params.id as string, 10);
+        if (isNaN(id)) { sendError(res, "Invalid ID", 400, "INVALID_ID"); return; }
+
+        const item = await prisma.item.findUnique({ where: { id } });
+        if (!item) { sendError(res, "Item not found", 404, "NOT_FOUND"); return; }
+
+        // Refuse if the item has any responses
+        const responseCount = await prisma.responseItem.count({ where: { itemId: id } });
+        if (responseCount > 0) {
+            sendError(res, "This item has responses and cannot be deleted. Delete the project first.", 409, "HAS_RESPONSES");
+            return;
+        }
+
+        await prisma.item.delete({ where: { id } });
+        sendSuccess(res, { deleted: true });
+    } catch (err) {
+        next(err);
+    }
+}
+
 export async function addProjectParticipant(req: Request, res: Response, next: NextFunction) {
     try {
         const projectId = parseInt(req.params.id as string, 10);
