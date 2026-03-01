@@ -142,6 +142,26 @@ export async function cloneVersion(req: Request, res: Response, next: NextFuncti
     }
 }
 
+export async function getVersion(req: Request, res: Response, next: NextFunction) {
+    try {
+        const id = parseInt(req.params.id as string, 10);
+        if (isNaN(id)) { sendError(res, "Invalid ID", 400, "INVALID_ID"); return; }
+        const version = await prisma.instrumentVersion.findUnique({
+            where: { id },
+            include: {
+                items: {
+                    orderBy: { position: "asc" },
+                    include: { construct: { select: { id: true, name: true } } },
+                },
+            },
+        });
+        if (!version) { sendError(res, "Version not found", 404, "NOT_FOUND"); return; }
+        sendSuccess(res, version);
+    } catch (err) {
+        next(err);
+    }
+}
+
 export async function updateVersion(req: Request, res: Response, next: NextFunction) {
     try {
         const id = parseInt(req.params.id as string, 10);
@@ -155,6 +175,15 @@ export async function updateVersion(req: Request, res: Response, next: NextFunct
 }
 
 // ── Constructs ──
+
+export async function listConstructs(_req: Request, res: Response, next: NextFunction) {
+    try {
+        const constructs = await prisma.construct.findMany({ orderBy: { name: "asc" } });
+        sendSuccess(res, constructs);
+    } catch (err) {
+        next(err);
+    }
+}
 
 export async function createConstruct(req: Request, res: Response, next: NextFunction) {
     try {

@@ -18,10 +18,12 @@ adminRoutes.patch("/instruments/:id", admin.updateInstrument);
 
 // ── Versions ──
 adminRoutes.post("/instruments/:id/versions", admin.createVersion);
+adminRoutes.get("/versions/:id", admin.getVersion);
 adminRoutes.post("/versions/:id/clone", admin.cloneVersion);
 adminRoutes.patch("/versions/:id", admin.updateVersion);
 
 // ── Constructs ──
+adminRoutes.get("/constructs", admin.listConstructs);
 adminRoutes.post("/constructs", admin.createConstruct);
 adminRoutes.patch("/constructs/:id", admin.updateConstruct);
 

@@ -88,14 +88,10 @@ export default function App() {
     }
 
     async function openVersion(versionId: number) {
-        // Load full version with items
-        const inst = currentInstrument;
-        if (!inst) return;
-        // Fetch instrument detail to get items for this version
-        const res = await api(`/instruments/${inst.id}`, token);
+        const res = await api(`/admin/versions/${versionId}`, token);
         if (!res.success) return;
-        const ver = res.data.versions?.find((v: Any) => v.id === versionId);
-        if (ver) { setCurrentVersion(ver); setScreen("version-detail"); }
+        setCurrentVersion(res.data);
+        setScreen("version-detail");
     }
 
     // ── Projects ──
@@ -521,11 +517,19 @@ function CreateItemForm({ token, versionId, onCreated }: { token: string; versio
     const [text, setText] = useState("");
     const [constructId, setConstructId] = useState("");
     const [scale, setScale] = useState("LIKERT_5");
+    const [constructs, setConstructs] = useState<Any[]>([]);
     const [err, setErr] = useState("");
+
+    useEffect(() => {
+        api("/admin/constructs", token).then((res) => {
+            if (res.success) setConstructs(res.data);
+        });
+    }, [token]);
+
     async function submit() {
         setErr("");
         const cid = parseInt(constructId, 10);
-        if (isNaN(cid)) return setErr("Construct ID must be a number");
+        if (isNaN(cid)) return setErr("Select a construct");
         const res = await api(`/admin/versions/${versionId}/items`, token, { body: { constructId: cid, text, scaleType: scale } });
         if (!res.success) return setErr(res.error.message);
         setText(""); onCreated();
@@ -535,7 +539,12 @@ function CreateItemForm({ token, versionId, onCreated }: { token: string; versio
             <b>Add Item</b>
             <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
                 <input placeholder="Text" value={text} onChange={(e) => setText(e.target.value)} style={{ minWidth: 200 }} />
-                <input placeholder="Construct ID" value={constructId} onChange={(e) => setConstructId(e.target.value)} style={{ width: 100 }} />
+                <select value={constructId} onChange={(e) => setConstructId(e.target.value)}>
+                    <option value="">— Construct —</option>
+                    {constructs.map((c: Any) => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                </select>
                 <select value={scale} onChange={(e) => setScale(e.target.value)}>
                     <option value="LIKERT_5">LIKERT_5</option>
                     <option value="LIKERT_7">LIKERT_7</option>
