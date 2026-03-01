@@ -209,7 +209,8 @@ export default function App() {
                             <td>{v.isActive ? "✓" : "—"}</td>
                             <td>
                                 <button onClick={() => openVersion(v.id)}>Items</button>{" "}
-                                <CloneVersionButton token={token} versionId={v.id} onCloned={async () => { await loadInstruments(); openInstrument(inst.id); }} />
+                                <CloneVersionButton token={token} versionId={v.id} onCloned={async () => { await loadInstruments(); openInstrument(inst.id); }} />{" "}
+                                <ToggleActiveButton token={token} versionId={v.id} isActive={v.isActive} onToggled={async () => { await loadInstruments(); openInstrument(inst.id); }} />
                             </td>
                         </tr>
                     ))}
@@ -557,6 +558,20 @@ function CreateItemForm({ token, versionId, onCreated }: { token: string; versio
     );
 }
 
+function ToggleActiveButton({ token, versionId, isActive, onToggled }: { token: string; versionId: number; isActive: boolean; onToggled: () => void }) {
+    async function toggle() {
+        if (isActive && !confirm("Deactivating will hide this version from clients. Continue?")) return;
+        const res = await api(`/admin/versions/${versionId}`, token, { method: "PATCH", body: { isActive: !isActive } });
+        if (res.success) onToggled();
+        else alert(res.error.message);
+    }
+    return (
+        <button onClick={toggle} style={{ color: isActive ? "#a00" : "#080" }}>
+            {isActive ? "Deactivate" : "Activate"}
+        </button>
+    );
+}
+
 function EditItemButton({ token, item, onUpdated }: { token: string; item: Any; onUpdated: () => void }) {
     async function edit() {
         const newText = prompt("Item text:", item.text);
@@ -571,11 +586,19 @@ function EditItemButton({ token, item, onUpdated }: { token: string; item: Any; 
 function CreateProjectForm({ token, onCreated }: { token: string; onCreated: () => void }) {
     const [name, setName] = useState("");
     const [ivId, setIvId] = useState("");
+    const [instruments, setInstruments] = useState<Any[]>([]);
     const [err, setErr] = useState("");
+
+    useEffect(() => {
+        api("/admin/instruments", token).then((res) => {
+            if (res.success) setInstruments(res.data);
+        });
+    }, [token]);
+
     async function submit() {
         setErr("");
         const id = parseInt(ivId, 10);
-        if (isNaN(id)) return setErr("Version ID must be a number");
+        if (isNaN(id)) return setErr("Select an instrument version");
         const res = await api("/admin/projects", token, { body: { name, instrumentVersionId: id } });
         if (!res.success) return setErr(res.error.message);
         setName(""); setIvId(""); onCreated();
@@ -585,7 +608,16 @@ function CreateProjectForm({ token, onCreated }: { token: string; onCreated: () 
             <b>Create Project</b>
             <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
                 <input placeholder="Project name" value={name} onChange={(e) => setName(e.target.value)} />
-                <input placeholder="Instrument Version ID" value={ivId} onChange={(e) => setIvId(e.target.value)} style={{ width: 140 }} />
+                <select value={ivId} onChange={(e) => setIvId(e.target.value)}>
+                    <option value="">— Instrument Version —</option>
+                    {instruments.map((inst: Any) =>
+                        (inst.versions ?? []).map((v: Any) => (
+                            <option key={v.id} value={v.id}>
+                                {inst.name} — v{v.versionNumber}{v.isActive ? "" : " (inactive)"}
+                            </option>
+                        ))
+                    )}
+                </select>
                 <button onClick={submit}>Create</button>
             </div>
             {err && <div style={S.err}>{err}</div>}
