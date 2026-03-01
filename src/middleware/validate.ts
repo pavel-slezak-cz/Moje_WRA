@@ -138,8 +138,14 @@ export const reorderItemsSchema = z.object({
     itemIds: z.array(z.number().int().positive()).min(1, "At least one item ID required"),
 });
 
+// Helper: treat empty strings as undefined for optional fields
+const optionalString = (min: number, msg?: string) =>
+    z.preprocess((v) => (v === "" ? undefined : v), z.string().min(min, msg).optional());
+
 export const addParticipantByEmailSchema = z.object({
     email: z.string().email("Valid email is required"),
+    name: optionalString(1, "Name is required for new users"),
+    password: optionalString(6, "Password must be at least 6 characters"),
     role: z.enum(["ADMIN", "PARTICIPANT"]).optional(),
 });
 

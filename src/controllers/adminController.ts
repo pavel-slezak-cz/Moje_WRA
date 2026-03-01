@@ -17,6 +17,7 @@ import {
     addParticipantByEmailSchema,
     createAssignmentSchema,
 } from "../middleware/validate";
+import { hashPassword } from "../utils/hash";
 
 // ── Config ──
 
@@ -550,7 +551,14 @@ export async function addProjectParticipant(req: Request, res: Response, next: N
     try {
         const projectId = parseInt(req.params.id as string, 10);
         if (isNaN(projectId)) { sendError(res, "Invalid ID", 400, "INVALID_ID"); return; }
-        const data = addParticipantByEmailSchema.parse(req.body);
+        const parsed = addParticipantByEmailSchema.safeParse(req.body);
+        if (!parsed.success) {
+            const fields = parsed.error.flatten().fieldErrors;
+            const msgs = Object.entries(fields).map(([k, v]) => `${k}: ${(v as string[]).join(", ")}`).join("; ");
+            sendError(res, msgs || "Invalid input", 400, "VALIDATION_ERROR", fields);
+            return;
+        }
+        const data = parsed.data;
 
         // Verify ownership
         const project = await prisma.project.findUnique({ where: { id: projectId } });
@@ -559,9 +567,18 @@ export async function addProjectParticipant(req: Request, res: Response, next: N
             sendError(res, "Not project owner", 403, "INSUFFICIENT_ROLE"); return;
         }
 
-        // Find user by email
-        const user = await prisma.user.findUnique({ where: { email: data.email } });
-        if (!user) { sendError(res, "User not found", 404, "USER_NOT_FOUND"); return; }
+        // Find or create user by email
+        let user = await prisma.user.findUnique({ where: { email: data.email } });
+        if (!user) {
+            if (!data.name || !data.password) {
+                sendError(res, "User not found. Provide name and password to create a new account.", 404, "USER_NOT_FOUND");
+                return;
+            }
+            const passwordHash = await hashPassword(data.password);
+            user = await prisma.user.create({
+                data: { email: data.email, name: data.name, passwordHash },
+            });
+        }
 
         const participant = await prisma.projectParticipant.create({
             data: {

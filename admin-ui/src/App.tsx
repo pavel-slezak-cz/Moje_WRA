@@ -814,18 +814,36 @@ function CreateAssignmentForm({ token, projectId, participants, onCreated }: { t
 
 function AddParticipantForm({ token, projectId, onAdded }: { token: string; projectId: number; onAdded: () => void }) {
     const [email, setEmail] = useState("");
+    const [name, setName] = useState("");
+    const [password, setPassword] = useState("");
     const [err, setErr] = useState("");
     async function submit() {
         setErr("");
-        const res = await api(`/admin/projects/${projectId}/participants`, token, { body: { email } });
-        if (!res.success) return setErr(res.error.message);
-        setEmail(""); onAdded();
+        const body: Any = { email };
+        if (name) body.name = name;
+        if (password) body.password = password;
+        const res = await api(`/admin/projects/${projectId}/participants`, token, { body });
+        if (!res.success) {
+            const details = res.error?.details;
+            if (details) {
+                const msgs = Object.entries(details).map(([k, v]) => `${k}: ${(v as string[]).join(", ")}`).join("; ");
+                return setErr(msgs);
+            }
+            return setErr(res.error?.message || "Unknown error");
+        }
+        setEmail(""); setName(""); setPassword(""); onAdded();
     }
     return (
-        <div style={{ marginBottom: 12, display: "flex", gap: 8 }}>
-            <input placeholder="Email to add" value={email} onChange={(e) => setEmail(e.target.value)} />
-            <button onClick={submit}>Add Participant</button>
-            {err && <span style={S.err}>{err}</span>}
+        <div style={{ marginBottom: 12, padding: 12, background: "#f5f5f5", borderRadius: 6 }}>
+            <b>Add Participant</b>
+            <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+                <input placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} style={{ minWidth: 180 }} />
+                <input placeholder="Name (new user)" value={name} onChange={(e) => setName(e.target.value)} style={{ minWidth: 140 }} />
+                <input placeholder="Password (new user)" type="password" value={password} onChange={(e) => setPassword(e.target.value)} style={{ minWidth: 140 }} />
+                <button onClick={submit}>Add</button>
+            </div>
+            <div style={{ color: "#666", fontSize: 12, marginTop: 4 }}>Existing user? Just enter email. New user? Fill all three fields.</div>
+            {err && <div style={S.err}>{err}</div>}
         </div>
     );
 }
