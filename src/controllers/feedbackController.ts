@@ -44,6 +44,31 @@ export async function submitProjectResponse(req: Request, res: Response, next: N
         const projectId = req.projectParticipant!.projectId;
         const data = submitInstrumentResponseSchema.parse(req.body);
         const rows: NormalizedRow[] = data.rows;
+        const assignmentId = data.assignmentId ?? null;
+
+        // Validate assignmentId if provided
+        if (assignmentId) {
+            const assignment = await prisma.evaluationAssignment.findUnique({
+                where: { id: assignmentId },
+                include: { response: { select: { id: true } } },
+            });
+            if (!assignment) {
+                sendError(res, "Assignment not found", 404, "NOT_FOUND");
+                return;
+            }
+            if (assignment.projectId !== projectId) {
+                sendError(res, "Assignment does not belong to this project", 400, "INVALID_ASSIGNMENT");
+                return;
+            }
+            if (assignment.evaluatorUserId !== req.user!.userId) {
+                sendError(res, "This assignment is not assigned to you", 403, "NOT_ASSIGNED");
+                return;
+            }
+            if (assignment.response) {
+                sendError(res, "This assignment already has a completed response", 409, "ALREADY_COMPLETED");
+                return;
+            }
+        }
 
         // Load project's instrument version + its items (with scoring metadata)
         const project = await prisma.project.findUnique({
@@ -148,6 +173,7 @@ export async function submitProjectResponse(req: Request, res: Response, next: N
                         userId: req.user!.userId,
                         instrumentVersionId: project.instrumentVersionId,
                         projectId,
+                        assignmentId,
                     },
                 });
 

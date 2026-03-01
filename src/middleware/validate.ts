@@ -61,8 +61,10 @@ function normalizeItems(items: unknown[]): NormalizedRow[] {
 
 export const submitInstrumentResponseSchema = z.object({
     items: z.array(z.unknown()).min(1, "At least one item response is required"),
+    assignmentId: z.number().int().positive().optional(),
 }).transform((data) => ({
     rows: normalizeItems(data.items),
+    assignmentId: data.assignmentId,
 }));
 
 export const createProjectSchema = z.object({
@@ -139,6 +141,12 @@ export const reorderItemsSchema = z.object({
 export const addParticipantByEmailSchema = z.object({
     email: z.string().email("Valid email is required"),
     role: z.enum(["ADMIN", "PARTICIPANT"]).optional(),
+});
+
+export const createAssignmentSchema = z.object({
+    evaluatorUserId: z.number().int().positive("Evaluator user ID is required"),
+    targetUserId: z.number().int().positive("Target user ID is required"),
+    relationship: z.enum(["SELF", "MANAGER", "PEER", "SUBORDINATE"]),
 });
 
 // ── Generic validation middleware ──

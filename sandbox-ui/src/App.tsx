@@ -65,6 +65,8 @@ export default function App() {
 
     const [projects, setProjects] = useState<Any[]>([]);
     const [project, setProject] = useState<Any>(null);
+    const [assignments, setAssignments] = useState<Any[]>([]);
+    const [currentAssignment, setCurrentAssignment] = useState<Any>(null);
     const [instrument, setInstrument] = useState<Any>(null);
     const [strategy, setStrategy] = useState("");
 
@@ -85,16 +87,31 @@ export default function App() {
         if (pRes.success) setProjects(pRes.data);
     }
 
-    // ── Select project → load instrument ──
+    // ── Select project → load assignments ──
     async function selectProject(p: Any) {
         setProject(p);
+        setCurrentAssignment(null);
+        setInstrument(null);
         setResult(null);
         setWraAnswers({});
         setAnswers360({});
         setCurrentIndex(0);
         setStrategy("");
 
-        const res = await api(`/projects/${p.id}`, token);
+        const aRes = await api(`/projects/${p.id}/assignments`, token);
+        if (aRes.success) setAssignments(aRes.data);
+    }
+
+    // ── Pick assignment → load instrument ──
+    async function pickAssignment(a: Any) {
+        setCurrentAssignment(a);
+        setResult(null);
+        setWraAnswers({});
+        setAnswers360({});
+        setCurrentIndex(0);
+        setStrategy("");
+
+        const res = await api(`/projects/${project.id}`, token);
         if (!res.success) return;
         const ivId = res.data.instrumentVersionId;
 
@@ -130,13 +147,27 @@ export default function App() {
             }
         });
 
-        const res = await api(`/projects/${project.id}/responses`, token, { items });
+        const body: Any = { items };
+        if (currentAssignment) body.assignmentId = currentAssignment.id;
+        const res = await api(`/projects/${project.id}/responses`, token, body);
         if (!res.success) return setError(res.error.message);
         setResult(res.data);
     }
 
     function goBack() {
         setProject(null);
+        setCurrentAssignment(null);
+        setAssignments([]);
+        setInstrument(null);
+        setResult(null);
+        setWraAnswers({});
+        setAnswers360({});
+        setCurrentIndex(0);
+        setStrategy("");
+    }
+
+    function backToAssignments() {
+        setCurrentAssignment(null);
         setInstrument(null);
         setResult(null);
         setWraAnswers({});
@@ -207,6 +238,48 @@ export default function App() {
         );
     }
 
+    // ── Assignment picker ──
+    if (project && !currentAssignment) {
+        const pending = assignments.filter((a: Any) => !a.response);
+        const completed = assignments.filter((a: Any) => a.response);
+        return (
+            <div style={{ padding: 24, fontFamily: "monospace", maxWidth: 700 }}>
+                <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 16 }}>
+                    <h2 style={{ margin: 0 }}>{project.name}</h2>
+                    <button onClick={goBack}>← Projects</button>
+                </div>
+                {assignments.length === 0 ? (
+                    <p>No assignments found for you in this project.</p>
+                ) : (
+                    <>
+                        {pending.length > 0 && (
+                            <>
+                                <h3>Pending Assignments</h3>
+                                {pending.map((a: Any) => (
+                                    <div key={a.id} style={{ marginBottom: 8 }}>
+                                        <button onClick={() => pickAssignment(a)}>
+                                            {a.relationship}: Evaluate {a.target.name}
+                                        </button>
+                                    </div>
+                                ))}
+                            </>
+                        )}
+                        {completed.length > 0 && (
+                            <>
+                                <h3 style={{ color: "#666" }}>Completed</h3>
+                                {completed.map((a: Any) => (
+                                    <div key={a.id} style={{ marginBottom: 4, color: "#999" }}>
+                                        ✓ {a.relationship}: {a.target.name} (Response #{a.response.id})
+                                    </div>
+                                ))}
+                            </>
+                        )}
+                    </>
+                )}
+            </div>
+        );
+    }
+
     // ── Instrument + questionnaire ──
     const version = instrument?.versions?.[0];
     const isWRA = strategy === "WRA_ABSOLUTE_GAP";
@@ -233,8 +306,13 @@ export default function App() {
             <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 16 }}>
                 <h2 style={{ margin: 0 }}>{project.name}</h2>
                 <span style={{ color: "#666" }}>{strategy ? `(${strategy})` : ""}</span>
-                <button onClick={goBack}>← Projects</button>
+                <button onClick={backToAssignments}>← Assignments</button>
             </div>
+            {currentAssignment && (
+                <p style={{ color: "#06c", marginBottom: 12 }}>
+                    {currentAssignment.relationship}: Evaluating <b>{currentAssignment.target.name}</b>
+                </p>
+            )}
 
             {!version ? (
                 <p>Loading instrument…</p>

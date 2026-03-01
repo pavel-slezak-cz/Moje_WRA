@@ -105,6 +105,25 @@ export async function getById(req: Request, res: Response, next: NextFunction) {
     }
 }
 
+export async function myAssignments(req: Request, res: Response, next: NextFunction) {
+    try {
+        const projectId = req.projectParticipant!.projectId;
+        const userId = req.user!.userId;
+
+        const assignments = await prisma.evaluationAssignment.findMany({
+            where: { projectId, evaluatorUserId: userId },
+            include: {
+                target: { select: { id: true, name: true, email: true } },
+                response: { select: { id: true, createdAt: true } },
+            },
+            orderBy: { relationship: "asc" },
+        });
+        sendSuccess(res, assignments);
+    } catch (err) {
+        next(err);
+    }
+}
+
 export async function addParticipant(req: Request, res: Response, next: NextFunction) {
     try {
         const projectId = req.projectParticipant!.projectId;

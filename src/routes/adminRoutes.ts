@@ -40,6 +40,11 @@ adminRoutes.get("/projects/:id", admin.getProject);
 adminRoutes.delete("/projects/:id", admin.deleteProject);
 adminRoutes.post("/projects/:id/participants", admin.addProjectParticipant);
 
+// ── Evaluation Assignments ──
+adminRoutes.get("/projects/:id/assignments", admin.listAssignments);
+adminRoutes.post("/projects/:id/assignments", admin.createAssignment);
+adminRoutes.delete("/assignments/:id", admin.deleteAssignment);
+
 // ── DB Inspector (gated) ──
 adminRoutes.use("/inspector", inspectorGuard);
 adminRoutes.get("/inspector/projects/:id/overview", inspector.projectOverview);

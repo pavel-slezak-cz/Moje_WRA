@@ -56,6 +56,7 @@ export default function App() {
     const [projects, setProjects] = useState<Any[]>([]);
     const [currentProject, setCurrentProject] = useState<Any>(null);
     const [constructs, setConstructs] = useState<Any[]>([]);
+    const [assignments, setAssignments] = useState<Any[]>([]);
     const [inspectorOverview, setInspectorOverview] = useState<Any>(null);
     const [inspectorResponses, setInspectorResponses] = useState<Any[]>([]);
     const [inspectorResponse, setInspectorResponse] = useState<Any>(null);
@@ -110,7 +111,17 @@ export default function App() {
 
     async function openProject(id: number) {
         const res = await api(`/admin/projects/${id}`, token);
-        if (res.success) { setCurrentProject(res.data); setScreen("project-detail"); }
+        if (res.success) {
+            setCurrentProject(res.data);
+            const aRes = await api(`/admin/projects/${id}/assignments`, token);
+            if (aRes.success) setAssignments(aRes.data);
+            setScreen("project-detail");
+        }
+    }
+
+    async function reloadAssignments(projectId: number) {
+        const aRes = await api(`/admin/projects/${projectId}/assignments`, token);
+        if (aRes.success) setAssignments(aRes.data);
     }
 
     // ── Inspector ──
@@ -333,6 +344,38 @@ export default function App() {
                     </tbody>
                 </table>
                 <p style={{ color: "#666", marginTop: 8 }}>Responses: {p._count?.responses}</p>
+
+                <h3 style={{ marginTop: 24 }}>Evaluation Assignments</h3>
+                <CreateAssignmentForm token={token} projectId={p.id} participants={p.participants ?? []} onCreated={() => reloadAssignments(p.id)} />
+                {assignments.length === 0 ? <p style={{ color: "#666" }}>No assignments yet.</p> : (
+                    <table style={S.tbl} border={1} cellPadding={6}>
+                        <thead><tr><th>Evaluator</th><th>Target</th><th>Relationship</th><th>Status</th><th></th></tr></thead>
+                        <tbody>
+                        {assignments.map((a: Any) => (
+                            <tr key={a.id}>
+                                <td>{a.evaluator.name}</td>
+                                <td>{a.target.name}</td>
+                                <td>{a.relationship}</td>
+                                <td>{a.response ? `✓ Response #${a.response.id}` : "Pending"}</td>
+                                <td>
+                                    {!a.response && (
+                                        <button
+                                            style={{ color: "#a00" }}
+                                            onClick={async () => {
+                                                if (!confirm(`Delete assignment: ${a.evaluator.name} → ${a.target.name} (${a.relationship})?`)) return;
+                                                const res = await api(`/admin/assignments/${a.id}`, token, { method: "DELETE" });
+                                                if (res.success) reloadAssignments(p.id);
+                                                else alert(res.error.message);
+                                            }}
+                                        >✕</button>
+                                    )}
+                                </td>
+                            </tr>
+                        ))}
+                        </tbody>
+                    </table>
+                )}
+
                 <div style={{ marginTop: 24, borderTop: "1px solid #ccc", paddingTop: 16 }}>
                     <button
                         style={{ color: "#fff", background: "#a00", border: "none", padding: "8px 16px", cursor: "pointer", borderRadius: 4 }}
@@ -715,6 +758,54 @@ function CreateProjectForm({ token, onCreated }: { token: string; onCreated: () 
                     )}
                 </select>
                 <button onClick={submit}>Create</button>
+            </div>
+            {err && <div style={S.err}>{err}</div>}
+        </div>
+    );
+}
+
+function CreateAssignmentForm({ token, projectId, participants, onCreated }: { token: string; projectId: number; participants: Any[]; onCreated: () => void }) {
+    const [evaluatorId, setEvaluatorId] = useState("");
+    const [targetId, setTargetId] = useState("");
+    const [relationship, setRelationship] = useState("");
+    const [err, setErr] = useState("");
+    async function submit() {
+        setErr("");
+        const eId = parseInt(evaluatorId, 10);
+        const tId = parseInt(targetId, 10);
+        if (isNaN(eId)) return setErr("Select evaluator");
+        if (isNaN(tId)) return setErr("Select target");
+        if (!relationship) return setErr("Select relationship");
+        const res = await api(`/admin/projects/${projectId}/assignments`, token, {
+            body: { evaluatorUserId: eId, targetUserId: tId, relationship },
+        });
+        if (!res.success) return setErr(res.error.message);
+        setEvaluatorId(""); setTargetId(""); setRelationship(""); onCreated();
+    }
+    return (
+        <div style={{ marginBottom: 12, padding: 12, background: "#f5f5f5", borderRadius: 6 }}>
+            <b>Add Assignment</b>
+            <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+                <select value={evaluatorId} onChange={(e) => setEvaluatorId(e.target.value)}>
+                    <option value="">— Evaluator —</option>
+                    {participants.map((pt: Any) => (
+                        <option key={pt.user.id} value={pt.user.id}>{pt.user.name} ({pt.user.email})</option>
+                    ))}
+                </select>
+                <select value={targetId} onChange={(e) => setTargetId(e.target.value)}>
+                    <option value="">— Target —</option>
+                    {participants.map((pt: Any) => (
+                        <option key={pt.user.id} value={pt.user.id}>{pt.user.name} ({pt.user.email})</option>
+                    ))}
+                </select>
+                <select value={relationship} onChange={(e) => setRelationship(e.target.value)}>
+                    <option value="">— Relationship —</option>
+                    <option value="SELF">Self</option>
+                    <option value="MANAGER">Manager</option>
+                    <option value="PEER">Peer</option>
+                    <option value="SUBORDINATE">Subordinate</option>
+                </select>
+                <button onClick={submit}>Add</button>
             </div>
             {err && <div style={S.err}>{err}</div>}
         </div>

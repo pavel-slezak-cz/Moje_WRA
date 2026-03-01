@@ -53,6 +53,13 @@ enum ProjectRole {
   PARTICIPANT
 }
 
+enum EvaluationRelationship {
+  SELF
+  MANAGER
+  PEER
+  SUBORDINATE
+}
+
 // ── Core user model ──
 
 model User {
@@ -62,10 +69,12 @@ model User {
   name         String
   createdAt    DateTime           @default(now()) @map("created_at")
 
-  legacyResponses     LegacyResponse[]
-  instrumentResponses InstrumentResponse[]
-  ownedProjects       Project[]              @relation("ProjectOwner")
-  participations      ProjectParticipant[]
+  legacyResponses        LegacyResponse[]
+  instrumentResponses    InstrumentResponse[]
+  ownedProjects          Project[]              @relation("ProjectOwner")
+  participations         ProjectParticipant[]
+  assignmentsAsEvaluator EvaluationAssignment[] @relation("AssignmentEvaluator")
+  assignmentsAsTarget    EvaluationAssignment[] @relation("AssignmentTarget")
 
   @@map("users")
 }
@@ -164,11 +173,13 @@ model InstrumentResponse {
   userId              Int              @map("user_id")
   instrumentVersionId Int              @map("instrument_version_id")
   projectId           Int              @map("project_id")
+  assignmentId        Int?             @unique @map("assignment_id")
   createdAt           DateTime         @default(now()) @map("created_at")
 
-  user              User              @relation(fields: [userId], references: [id])
-  instrumentVersion InstrumentVersion @relation(fields: [instrumentVersionId], references: [id])
-  project           Project           @relation(fields: [projectId], references: [id])
+  user              User                  @relation(fields: [userId], references: [id])
+  instrumentVersion InstrumentVersion     @relation(fields: [instrumentVersionId], references: [id])
+  project           Project               @relation(fields: [projectId], references: [id])
+  assignment        EvaluationAssignment? @relation(fields: [assignmentId], references: [id])
   items             ResponseItem[]
   itemScores        ItemScore[]
   constructScores   ConstructScore[]
@@ -187,10 +198,11 @@ model Project {
   instrumentVersionId Int              @map("instrument_version_id")
   createdAt           DateTime         @default(now()) @map("created_at")
 
-  owner             User                @relation("ProjectOwner", fields: [ownerUserId], references: [id])
-  instrumentVersion InstrumentVersion   @relation(fields: [instrumentVersionId], references: [id])
+  owner             User                   @relation("ProjectOwner", fields: [ownerUserId], references: [id])
+  instrumentVersion InstrumentVersion      @relation(fields: [instrumentVersionId], references: [id])
   participants      ProjectParticipant[]
   responses         InstrumentResponse[]
+  assignments       EvaluationAssignment[]
 
   @@map("projects")
 }
@@ -207,6 +219,23 @@ model ProjectParticipant {
 
   @@unique([projectId, userId])
   @@map("project_participants")
+}
+
+model EvaluationAssignment {
+  id              Int                    @id @default(autoincrement())
+  projectId       Int                    @map("project_id")
+  evaluatorUserId Int                    @map("evaluator_user_id")
+  targetUserId    Int                    @map("target_user_id")
+  relationship    EvaluationRelationship
+  createdAt       DateTime               @default(now()) @map("created_at")
+
+  project   Project            @relation(fields: [projectId], references: [id])
+  evaluator User               @relation("AssignmentEvaluator", fields: [evaluatorUserId], references: [id])
+  target    User               @relation("AssignmentTarget", fields: [targetUserId], references: [id])
+  response  InstrumentResponse?
+
+  @@unique([projectId, evaluatorUserId, targetUserId, relationship])
+  @@map("evaluation_assignments")
 }
 
 model ResponseItem {
