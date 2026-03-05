@@ -54,9 +54,9 @@ const CS = {
     selfTarget: "sebe",
     rel: {
         SELF: "Sebehodnocení",
-        MANAGER: "Nadřízený",
-        PEER: "Kolega",
-        SUBORDINATE: "Podřízený",
+        MANAGER: "Vedoucí → Podřízený",
+        PEER: "Kolega → Kolega",
+        SUBORDINATE: "Podřízený → Vedoucí",
     } as Record<string, string>,
     // WRA scale prompts
     sourcePrompt: "Jak často se to děje dnes?",
@@ -70,6 +70,7 @@ const CS = {
     completed: "Vyplněno",
     alreadyCompleted: "Tento dotazník byl již vyplněn.",
     thankYou: "Děkujeme za vyplnění dotazníku.",
+    missingAnswers: "Ještě nemáte zodpovězené všechny otázky.",
     itemOf: (n: number, total: number) => `Otázka ${n} z ${total}`,
 };
 
@@ -496,13 +497,18 @@ export default function App() {
                         </button>
 
                         {isLastItem ? (
-                            <button
-                                onClick={submit}
-                                disabled={!allAnswered}
-                                style={{ fontSize: 16, padding: "8px 24px" }}
-                            >
-                                {CS.submitBtn}
-                            </button>
+                            <>
+                                <button
+                                    onClick={submit}
+                                    disabled={!allAnswered}
+                                    style={{ fontSize: 16, padding: "8px 24px" }}
+                                >
+                                    {CS.submitBtn}
+                                </button>
+                                {!allAnswered && (
+                                    <span style={{ color: "#b00", fontSize: 13 }}>{CS.missingAnswers}</span>
+                                )}
+                            </>
                         ) : (
                             <button onClick={() => setCurrentIndex((i) => i + 1)}>
                                 {CS.next}

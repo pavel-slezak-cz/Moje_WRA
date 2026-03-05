@@ -34,9 +34,9 @@ type Screen =
 // ── Relationship direction display (admin) ──
 const REL_DIRECTION: Record<string, string> = {
     SELF: "Sebehodnocení",
-    MANAGER: "Manažer → Podřízený",
+    MANAGER: "Vedoucí → Podřízený",
     PEER: "Kolega → Kolega",
-    SUBORDINATE: "Podřízený → Manažer",
+    SUBORDINATE: "Podřízený → Vedoucí",
 };
 
 // ── Styles ──
@@ -808,10 +808,9 @@ function CreateAssignmentForm({ token, projectId, participants, onCreated }: { t
                 </select>
                 <select value={relationship} onChange={(e) => setRelationship(e.target.value)}>
                     <option value="">— Relationship —</option>
-                    <option value="SELF">Self</option>
-                    <option value="MANAGER">Manager</option>
-                    <option value="PEER">Peer</option>
-                    <option value="SUBORDINATE">Subordinate</option>
+                    {Object.entries(REL_DIRECTION).map(([val, label]) => (
+                        <option key={val} value={val}>{label}</option>
+                    ))}
                 </select>
                 <button onClick={submit}>Add</button>
             </div>
