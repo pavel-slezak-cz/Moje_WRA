@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { authMiddleware } from "../middleware/auth";
+import { requireOwner } from "../middleware/adminGuard";
 import { inspectorGuard } from "../middleware/inspectorGuard";
 import * as admin from "../controllers/adminController";
 import * as inspector from "../controllers/inspectorController";
@@ -7,6 +8,7 @@ import * as inspector from "../controllers/inspectorController";
 export const adminRoutes = Router();
 
 adminRoutes.use(authMiddleware);
+adminRoutes.use(requireOwner);
 
 // ── Config ──
 adminRoutes.get("/config", admin.getConfig);
