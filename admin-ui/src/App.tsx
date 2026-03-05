@@ -633,7 +633,7 @@ function CreateItemForm({ token, versionId, onCreated }: { token: string; versio
     const [text, setText] = useState("");
     const [constructId, setConstructId] = useState("");
     const [scale, setScale] = useState("LIKERT_5");
-    const [labelSet, setLabelSet] = useState("");
+    const [labelSet, setLabelSet] = useState("FREQUENCY");
     const [constructs, setConstructs] = useState<Any[]>([]);
     const [err, setErr] = useState("");
 

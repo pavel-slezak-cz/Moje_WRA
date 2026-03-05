@@ -44,6 +44,48 @@ function getLabel(labelSet: string | null | undefined, scaleType: string, value:
     return LABEL_MAP[`${labelSet}:${scaleType}`]?.[value];
 }
 
+// ── Centralized Czech respondent-facing strings ──
+
+const CS = {
+    respondent: "Odpovídá",
+    feedbackFor: "Dává zpětnou vazbu pro",
+    relationship: "Vztah",
+    selfTarget: "sebe",
+    rel: {
+        SELF: "Sebehodnocení",
+        MANAGER: "Nadřízený",
+        PEER: "Kolega",
+        SUBORDINATE: "Podřízený",
+    } as Record<string, string>,
+};
+
+// ── Scale label helpers ──
+
+/** Inline label for a single radio option. Long scales (7+) show just the number. */
+function formatOptionLabel(labelSet: string | null | undefined, scaleType: string, value: number): string {
+    const lbl = getLabel(labelSet, scaleType, value);
+    if (!lbl) return String(value);
+    if (getScaleOptions(scaleType).length >= 7) return String(value);
+    return `${value} – ${lbl}`;
+}
+
+/** Compact min / mid / max legend for long scales (7+). Returns null when not applicable. */
+function renderScaleLegend(labelSet: string | null | undefined, scaleType: string) {
+    if (!labelSet) return null;
+    const options = getScaleOptions(scaleType);
+    if (options.length < 7) return null;
+    const labels = LABEL_MAP[`${labelSet}:${scaleType}`];
+    if (!labels) return null;
+    const min = options[0];
+    const max = options[options.length - 1];
+    const mid = options[Math.floor((options.length - 1) / 2)];
+    return (
+        <div style={{ fontSize: 12, color: "#666", marginBottom: 8, fontStyle: "italic" }}>
+            {min} = {labels[min]}  …  {mid} = {labels[mid]}  …  {max} = {labels[max]}
+        </div>
+    );
+}
+
 const api = (path: string, token?: string, body?: unknown) =>
     fetch(`${API}${path}`, {
         method: body ? "POST" : "GET",
@@ -62,6 +104,7 @@ export default function App() {
     const [error, setError] = useState("");
     const [email, setEmail] = useState("pavel@test.cz");
     const [password, setPassword] = useState("heslo");
+    const [userName, setUserName] = useState("");
 
     const [projects, setProjects] = useState<Any[]>([]);
     const [project, setProject] = useState<Any>(null);
@@ -83,6 +126,7 @@ export default function App() {
         const res = await api("/auth/login", undefined, { email, password });
         if (!res.success) return setError(res.error.message);
         setToken(res.data.token);
+        setUserName(res.data.user?.name || "");
         const pRes = await api("/projects", res.data.token);
         if (pRes.success) setProjects(pRes.data);
     }
@@ -309,9 +353,16 @@ export default function App() {
                 <button onClick={backToAssignments}>← Assignments</button>
             </div>
             {currentAssignment && (
-                <p style={{ color: "#06c", marginBottom: 12 }}>
-                    {currentAssignment.relationship}: Evaluating <b>{currentAssignment.target.name}</b>
-                </p>
+                <div style={{ borderLeft: "3px solid #5b8cb8", paddingLeft: 12, marginBottom: 16, fontSize: 13, lineHeight: "1.7" }}>
+                    <div><strong>{CS.respondent}:</strong> {userName || email}</div>
+                    <div>
+                        <strong>{CS.feedbackFor}:</strong>{" "}
+                        {currentAssignment.relationship === "SELF"
+                            ? CS.selfTarget
+                            : currentAssignment.target.name}
+                    </div>
+                    <div><strong>{CS.relationship}:</strong> {CS.rel[currentAssignment.relationship] || currentAssignment.relationship}</div>
+                </div>
             )}
 
             {!version ? (
@@ -464,12 +515,11 @@ export default function App() {
 
                             {isWRA ? (
                                 <div>
+                                    {renderScaleLegend(currentItem.labelSet, currentItem.scaleType)}
                                     <div style={{ marginBottom: 12 }}>
                                         <strong>Jak to je (SOURCE):</strong>
                                         <div style={{ marginTop: 4 }}>
-                                            {opts.map((v) => {
-                                                const lbl = getLabel(currentItem.labelSet, currentItem.scaleType, v);
-                                                return (
+                                            {opts.map((v) => (
                                                     <label key={v} style={{ marginRight: 12 }}>
                                                         <input
                                                             type="radio"
@@ -482,18 +532,15 @@ export default function App() {
                                                                 }))
                                                             }
                                                         />
-                                                        {lbl ? `${v} – ${lbl}` : v}
+                                                        {formatOptionLabel(currentItem.labelSet, currentItem.scaleType, v)}
                                                     </label>
-                                                );
-                                            })}
+                                                ))}
                                         </div>
                                     </div>
                                     <div>
                                         <strong>Jak bych si přál/a (TARGET):</strong>
                                         <div style={{ marginTop: 4 }}>
-                                            {opts.map((v) => {
-                                                const lbl = getLabel(currentItem.labelSet, currentItem.scaleType, v);
-                                                return (
+                                            {opts.map((v) => (
                                                     <label key={v} style={{ marginRight: 12 }}>
                                                         <input
                                                             type="radio"
@@ -506,31 +553,28 @@ export default function App() {
                                                                 }))
                                                             }
                                                         />
-                                                        {lbl ? `${v} – ${lbl}` : v}
+                                                        {formatOptionLabel(currentItem.labelSet, currentItem.scaleType, v)}
                                                     </label>
-                                                );
-                                            })}
+                                                ))}
                                         </div>
                                     </div>
                                 </div>
                             ) : (
                                 <div>
-                                    {opts.map((v) => {
-                                        const lbl = getLabel(currentItem.labelSet, currentItem.scaleType, v);
-                                        return (
-                                            <label key={v} style={{ marginRight: 12 }}>
-                                                <input
-                                                    type="radio"
-                                                    name={`item-${currentItem.id}`}
-                                                    checked={answers360[currentItem.id] === v}
-                                                    onChange={() =>
-                                                        setAnswers360((a) => ({ ...a, [currentItem.id]: v }))
-                                                    }
-                                                />
-                                                {lbl ? `${v} – ${lbl}` : v}
-                                            </label>
-                                        );
-                                    })}
+                                    {renderScaleLegend(currentItem.labelSet, currentItem.scaleType)}
+                                    {opts.map((v) => (
+                                        <label key={v} style={{ marginRight: 12 }}>
+                                            <input
+                                                type="radio"
+                                                name={`item-${currentItem.id}`}
+                                                checked={answers360[currentItem.id] === v}
+                                                onChange={() =>
+                                                    setAnswers360((a) => ({ ...a, [currentItem.id]: v }))
+                                                }
+                                            />
+                                            {formatOptionLabel(currentItem.labelSet, currentItem.scaleType, v)}
+                                        </label>
+                                    ))}
                                 </div>
                             )}
                         </div>
