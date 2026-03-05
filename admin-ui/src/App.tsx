@@ -31,6 +31,14 @@ type Screen =
     | "inspector-responses"
     | "inspector-response-detail";
 
+// ── Relationship direction display (admin) ──
+const REL_DIRECTION: Record<string, string> = {
+    SELF: "Sebehodnocení",
+    MANAGER: "Manažer → Podřízený",
+    PEER: "Kolega → Kolega",
+    SUBORDINATE: "Podřízený → Manažer",
+};
+
 // ── Styles ──
 const S = {
     page: { padding: 24, fontFamily: "monospace", maxWidth: 960 } as const,
@@ -355,7 +363,7 @@ export default function App() {
                             <tr key={a.id}>
                                 <td>{a.evaluator.name}</td>
                                 <td>{a.target.name}</td>
-                                <td>{a.relationship}</td>
+                                <td>{REL_DIRECTION[a.relationship] || a.relationship}</td>
                                 <td>{a.response ? `✓ Response #${a.response.id}` : "Pending"}</td>
                                 <td>
                                     {!a.response && (

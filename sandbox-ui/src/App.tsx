@@ -47,6 +47,7 @@ function getLabel(labelSet: string | null | undefined, scaleType: string, value:
 // ── Centralized Czech respondent-facing strings ──
 
 const CS = {
+    // Assignment context header
     respondent: "Odpovídá",
     feedbackFor: "Dává zpětnou vazbu pro",
     relationship: "Vztah",
@@ -57,6 +58,19 @@ const CS = {
         PEER: "Kolega",
         SUBORDINATE: "Podřízený",
     } as Record<string, string>,
+    // WRA scale prompts
+    sourcePrompt: "Jak často se to děje dnes?",
+    targetPrompt: "Jak často bych si to přál.",
+    // Navigation & controls
+    prev: "← Zpět",
+    next: "Další →",
+    submitBtn: "Odeslat",
+    back: "Zpět",
+    // Status & messages
+    completed: "Vyplněno",
+    alreadyCompleted: "Tento dotazník byl již vyplněn.",
+    thankYou: "Děkujeme za vyplnění dotazníku.",
+    itemOf: (n: number, total: number) => `Otázka ${n} z ${total}`,
 };
 
 // ── Scale label helpers ──
@@ -210,7 +224,7 @@ export default function App() {
         setStrategy("");
     }
 
-    function backToAssignments() {
+    async function backToAssignments() {
         setCurrentAssignment(null);
         setInstrument(null);
         setResult(null);
@@ -218,6 +232,11 @@ export default function App() {
         setAnswers360({});
         setCurrentIndex(0);
         setStrategy("");
+        // Re-fetch to reflect newly completed assignments
+        if (project) {
+            const aRes = await api(`/projects/${project.id}/assignments`, token);
+            if (aRes.success) setAssignments(aRes.data);
+        }
     }
 
     // ── Not logged in ──
@@ -310,10 +329,10 @@ export default function App() {
                         )}
                         {completed.length > 0 && (
                             <>
-                                <h3 style={{ color: "#666" }}>Completed</h3>
+                                <h3 style={{ color: "#666" }}>{CS.completed}</h3>
                                 {completed.map((a: Any) => (
                                     <div key={a.id} style={{ marginBottom: 4, color: "#999" }}>
-                                        ✓ {a.relationship}: {a.target.name} (Response #{a.response.id})
+                                        ✓ {CS.rel[a.relationship] || a.relationship}: {a.target.name} — {CS.completed}
                                     </div>
                                 ))}
                             </>
@@ -365,136 +384,22 @@ export default function App() {
                 </div>
             )}
 
-            {!version ? (
+            {currentAssignment?.response ? (
+                <div style={{ textAlign: "center", padding: "40px 0" }}>
+                    <p style={{ fontSize: 16, color: "#666" }}>{CS.alreadyCompleted}</p>
+                    <button onClick={backToAssignments}>{CS.back}</button>
+                </div>
+            ) : !version ? (
                 <p>Loading instrument…</p>
             ) : result ? (
-                <div>
-                    <h3>Item Scores</h3>
-                    <table border={1} cellPadding={4} style={{ borderCollapse: "collapse" }}>
-                        <thead>
-                        {isWRA ? (
-                            <tr>
-                                <th>Item</th>
-                                <th>Source</th>
-                                <th>Target</th>
-                                <th>Gap</th>
-                                <th>|Gap|</th>
-                            </tr>
-                        ) : (
-                            <tr>
-                                <th>Item</th>
-                                <th>Raw</th>
-                                <th>Normalized</th>
-                            </tr>
-                        )}
-                        </thead>
-                        <tbody>
-                        {result.itemScores.map((s: Any) => {
-                            const raw = result.items.find((i: Any) => i.itemId === s.itemId);
-                            return isWRA ? (
-                                <tr key={s.id}>
-                                    <td>{s.itemId}</td>
-                                    <td>{s.sourceValue ?? "—"}</td>
-                                    <td>{s.targetValue ?? "—"}</td>
-                                    <td>{s.gapValue ?? "—"}</td>
-                                    <td>{s.absoluteGapValue ?? "—"}</td>
-                                </tr>
-                            ) : (
-                                <tr key={s.id}>
-                                    <td>{s.itemId}</td>
-                                    <td>{raw?.value ?? "—"}</td>
-                                    <td>{s.sourceValue ?? "—"}</td>
-                                </tr>
-                            );
-                        })}
-                        </tbody>
-                    </table>
-
-                    <h3>Construct Scores</h3>
-                    <table border={1} cellPadding={4} style={{ borderCollapse: "collapse" }}>
-                        <thead>
-                        {isWRA ? (
-                            <tr>
-                                <th>Construct</th>
-                                <th>Source Mean</th>
-                                <th>Target Mean</th>
-                                <th>Gap Mean</th>
-                                <th>Mean |Gap|</th>
-                            </tr>
-                        ) : (
-                            <tr>
-                                <th>Construct</th>
-                                <th>Mean</th>
-                            </tr>
-                        )}
-                        </thead>
-                        <tbody>
-                        {result.constructScores.map((c: Any) =>
-                            isWRA ? (
-                                <tr key={c.id}>
-                                    <td>{c.construct.name}</td>
-                                    <td>{c.sourceMean?.toFixed(2) ?? "—"}</td>
-                                    <td>{c.targetMean?.toFixed(2) ?? "—"}</td>
-                                    <td>{c.gapMean?.toFixed(2) ?? "—"}</td>
-                                    <td>{c.meanAbsoluteGap?.toFixed(2) ?? "—"}</td>
-                                </tr>
-                            ) : (
-                                <tr key={c.id}>
-                                    <td>{c.construct.name}</td>
-                                    <td>{c.sourceMean?.toFixed(2) ?? "—"}</td>
-                                </tr>
-                            ),
-                        )}
-                        </tbody>
-                    </table>
-
-                    <h3>Global Score</h3>
-                    {result.globalScore && (
-                        <table border={1} cellPadding={4} style={{ borderCollapse: "collapse" }}>
-                            <tbody>
-                            {isWRA ? (
-                                <>
-                                    <tr>
-                                        <td>Global Source Mean</td>
-                                        <td>{result.globalScore.globalSourceMean?.toFixed(4)}</td>
-                                    </tr>
-                                    <tr>
-                                        <td>Global Target Mean</td>
-                                        <td>{result.globalScore.globalTargetMean?.toFixed(4)}</td>
-                                    </tr>
-                                    <tr>
-                                        <td>Global Gap Mean</td>
-                                        <td>{result.globalScore.globalGapMean?.toFixed(4)}</td>
-                                    </tr>
-                                    <tr>
-                                        <td>Global Mean |Gap|</td>
-                                        <td>{result.globalScore.globalMeanAbsoluteGap?.toFixed(4)}</td>
-                                    </tr>
-                                </>
-                            ) : (
-                                <tr>
-                                    <td>Global Mean</td>
-                                    <td>{result.globalScore.globalSourceMean?.toFixed(4)}</td>
-                                </tr>
-                            )}
-                            <tr>
-                                <td>Scoring Model</td>
-                                <td>{result.globalScore.scoringModelVersion}</td>
-                            </tr>
-                            </tbody>
-                        </table>
-                    )}
-
-                    {!isWRA && !is360 && (
-                        <div style={{ marginTop: 8, color: "#a00" }}>
-                            Unknown scoring strategy: {strategy || "—"}
-                        </div>
-                    )}
+                <div style={{ textAlign: "center", padding: "40px 0" }}>
+                    <p style={{ fontSize: 18 }}>{CS.thankYou}</p>
+                    <button onClick={backToAssignments} style={{ marginTop: 16, padding: "8px 24px" }}>{CS.back}</button>
                 </div>
             ) : (
                 <div>
                     <div style={{ marginBottom: 12, color: "#666" }}>
-                        Item {currentIndex + 1} of {totalItems}
+                        {CS.itemOf(currentIndex + 1, totalItems)}
                     </div>
 
                     {currentItem && (
@@ -517,7 +422,7 @@ export default function App() {
                                 <div>
                                     {renderScaleLegend(currentItem.labelSet, currentItem.scaleType)}
                                     <div style={{ marginBottom: 12 }}>
-                                        <strong>Jak to je (SOURCE):</strong>
+                                        <strong>{CS.sourcePrompt}</strong>
                                         <div style={{ marginTop: 4 }}>
                                             {opts.map((v) => (
                                                     <label key={v} style={{ marginRight: 12 }}>
@@ -538,7 +443,7 @@ export default function App() {
                                         </div>
                                     </div>
                                     <div>
-                                        <strong>Jak bych si přál/a (TARGET):</strong>
+                                        <strong>{CS.targetPrompt}</strong>
                                         <div style={{ marginTop: 4 }}>
                                             {opts.map((v) => (
                                                     <label key={v} style={{ marginRight: 12 }}>
@@ -587,7 +492,7 @@ export default function App() {
                             onClick={() => setCurrentIndex((i) => i - 1)}
                             disabled={currentIndex === 0}
                         >
-                            ← Prev
+                            {CS.prev}
                         </button>
 
                         {isLastItem ? (
@@ -596,11 +501,11 @@ export default function App() {
                                 disabled={!allAnswered}
                                 style={{ fontSize: 16, padding: "8px 24px" }}
                             >
-                                Submit Response
+                                {CS.submitBtn}
                             </button>
                         ) : (
                             <button onClick={() => setCurrentIndex((i) => i + 1)}>
-                                Next →
+                                {CS.next}
                             </button>
                         )}
                     </div>
