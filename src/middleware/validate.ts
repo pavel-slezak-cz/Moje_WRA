@@ -70,7 +70,14 @@ export const submitInstrumentResponseSchema = z.object({
 export const createProjectSchema = z.object({
     name: z.string().min(1, "Project name is required"),
     description: z.string().optional(),
+    introText: z.string().optional(),
     instrumentVersionId: z.number().int().positive("Instrument version ID is required"),
+});
+
+export const updateProjectSchema = z.object({
+    name: z.string().min(1).optional(),
+    description: z.string().optional(),
+    introText: z.string().nullable().optional(),
 });
 
 export const addParticipantSchema = z.object({

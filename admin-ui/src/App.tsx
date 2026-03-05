@@ -336,6 +336,7 @@ export default function App() {
                 <button onClick={() => setScreen("projects")}>← Projects</button>
                 <h2>{p.name}</h2>
                 <p>{p.instrumentVersion?.instrument?.name} v{p.instrumentVersion?.versionNumber} ({p.instrumentVersion?.scoringStrategy})</p>
+                <EditIntroTextBlock token={token} project={p} onUpdated={() => openProject(p.id)} />
                 <h3>Participants</h3>
                 <AddParticipantForm token={token} projectId={p.id} onAdded={() => openProject(p.id)} />
                 <table style={S.tbl} border={1} cellPadding={6}>
@@ -733,6 +734,7 @@ function DeleteItemButton({ token, item, onDeleted }: { token: string; item: Any
 function CreateProjectForm({ token, onCreated }: { token: string; onCreated: () => void }) {
     const [name, setName] = useState("");
     const [ivId, setIvId] = useState("");
+    const [introText, setIntroText] = useState("");
     const [instruments, setInstruments] = useState<Any[]>([]);
     const [err, setErr] = useState("");
 
@@ -746,9 +748,11 @@ function CreateProjectForm({ token, onCreated }: { token: string; onCreated: () 
         setErr("");
         const id = parseInt(ivId, 10);
         if (isNaN(id)) return setErr("Select an instrument version");
-        const res = await api("/admin/projects", token, { body: { name, instrumentVersionId: id } });
+        const body: Any = { name, instrumentVersionId: id };
+        if (introText.trim()) body.introText = introText.trim();
+        const res = await api("/admin/projects", token, { body });
         if (!res.success) return setErr(res.error.message);
-        setName(""); setIvId(""); onCreated();
+        setName(""); setIvId(""); setIntroText(""); onCreated();
     }
     return (
         <div style={{ marginBottom: 16, padding: 12, background: "#f5f5f5", borderRadius: 6 }}>
@@ -766,6 +770,15 @@ function CreateProjectForm({ token, onCreated }: { token: string; onCreated: () 
                     )}
                 </select>
                 <button onClick={submit}>Create</button>
+            </div>
+            <div style={{ marginTop: 8 }}>
+                <textarea
+                    placeholder="Úvodní text pro respondenty (volitelné)"
+                    value={introText}
+                    onChange={(e) => setIntroText(e.target.value)}
+                    rows={3}
+                    style={{ width: "100%", maxWidth: 500, fontFamily: "monospace", fontSize: 13 }}
+                />
             </div>
             {err && <div style={S.err}>{err}</div>}
         </div>
@@ -815,6 +828,57 @@ function CreateAssignmentForm({ token, projectId, participants, onCreated }: { t
                 <button onClick={submit}>Add</button>
             </div>
             {err && <div style={S.err}>{err}</div>}
+        </div>
+    );
+}
+
+function EditIntroTextBlock({ token, project, onUpdated }: { token: string; project: Any; onUpdated: () => void }) {
+    const [editing, setEditing] = useState(false);
+    const [text, setText] = useState(project.introText ?? "");
+    const [saving, setSaving] = useState(false);
+
+    async function save() {
+        setSaving(true);
+        const res = await api(`/admin/projects/${project.id}`, token, {
+            method: "PATCH",
+            body: { introText: text.trim() || null },
+        });
+        setSaving(false);
+        if (res.success) { setEditing(false); onUpdated(); }
+        else alert(res.error.message);
+    }
+
+    if (editing) {
+        return (
+            <div style={{ margin: "12px 0", padding: 12, background: "#f5f5f5", borderRadius: 6 }}>
+                <b>Úvodní text pro respondenty</b>
+                <textarea
+                    value={text}
+                    onChange={(e) => setText(e.target.value)}
+                    rows={4}
+                    style={{ width: "100%", marginTop: 8, fontFamily: "monospace", fontSize: 13 }}
+                />
+                <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                    <button onClick={save} disabled={saving}>{saving ? "Saving…" : "Save"}</button>
+                    <button onClick={() => { setText(project.introText ?? ""); setEditing(false); }}>Cancel</button>
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div style={{ margin: "12px 0" }}>
+            {project.introText ? (
+                <div style={{ padding: 10, background: "#f9f9f9", borderLeft: "3px solid #5b8cb8", borderRadius: 4, whiteSpace: "pre-wrap", fontSize: 13 }}>
+                    <div style={{ color: "#666", fontSize: 11, marginBottom: 4 }}>Úvodní text pro respondenty:</div>
+                    {project.introText}
+                </div>
+            ) : (
+                <span style={{ color: "#999", fontSize: 13 }}>Žádný úvodní text</span>
+            )}
+            <button onClick={() => setEditing(true)} style={{ marginLeft: 8, fontSize: 12 }}>
+                {project.introText ? "Edit intro" : "+ Add intro text"}
+            </button>
         </div>
     );
 }

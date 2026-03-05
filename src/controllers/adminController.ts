@@ -14,6 +14,7 @@ import {
     updateItemSchema,
     reorderItemsSchema,
     createProjectSchema,
+    updateProjectSchema,
     addParticipantByEmailSchema,
     createAssignmentSchema,
 } from "../middleware/validate";
@@ -298,6 +299,7 @@ export async function listProjects(req: Request, res: Response, next: NextFuncti
                 id: true,
                 name: true,
                 description: true,
+                introText: true,
                 createdAt: true,
                 instrumentVersion: {
                     select: {
@@ -328,6 +330,7 @@ export async function createProject(req: Request, res: Response, next: NextFunct
                 data: {
                     name: data.name,
                     description: data.description,
+                    introText: data.introText,
                     ownerUserId: req.user!.userId,
                     instrumentVersionId: data.instrumentVersionId,
                 },
@@ -375,6 +378,25 @@ export async function getProject(req: Request, res: Response, next: NextFunction
             sendError(res, "Not project owner", 403, "INSUFFICIENT_ROLE"); return;
         }
         sendSuccess(res, project);
+    } catch (err) {
+        next(err);
+    }
+}
+
+export async function updateProject(req: Request, res: Response, next: NextFunction) {
+    try {
+        const id = parseInt(req.params.id as string, 10);
+        if (isNaN(id)) { sendError(res, "Invalid ID", 400, "INVALID_ID"); return; }
+
+        const project = await prisma.project.findUnique({ where: { id } });
+        if (!project) { sendError(res, "Project not found", 404, "NOT_FOUND"); return; }
+        if (project.ownerUserId !== req.user!.userId) {
+            sendError(res, "Not project owner", 403, "INSUFFICIENT_ROLE"); return;
+        }
+
+        const data = updateProjectSchema.parse(req.body);
+        const updated = await prisma.project.update({ where: { id }, data });
+        sendSuccess(res, updated);
     } catch (err) {
         next(err);
     }

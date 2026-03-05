@@ -71,6 +71,10 @@ const CS = {
     alreadyCompleted: "Tento dotazník byl již vyplněn.",
     thankYou: "Děkujeme za vyplnění dotazníku.",
     missingAnswers: "Ještě nemáte zodpovězené všechny otázky.",
+    logout: "Odhlásit se",
+    noAssignments: "Žádné přiřazené dotazníky.",
+    pendingHeading: "Dotazníky k vyplnění",
+    evaluate: (rel: string, name: string) => `${rel}: ${name}`,
     itemOf: (n: number, total: number) => `Otázka ${n} z ${total}`,
 };
 
@@ -312,17 +316,40 @@ export default function App() {
                     <h2 style={{ margin: 0 }}>{project.name}</h2>
                     <button onClick={goBack}>← Projects</button>
                 </div>
+
+                {project.introText && (
+                    <div style={{ padding: 14, background: "#f7f9fb", borderLeft: "3px solid #5b8cb8", borderRadius: 4, marginBottom: 20, fontSize: 14, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
+                        {project.introText}
+                    </div>
+                )}
+
                 {assignments.length === 0 ? (
-                    <p>No assignments found for you in this project.</p>
+                    <p>{CS.noAssignments}</p>
                 ) : (
                     <>
                         {pending.length > 0 && (
                             <>
-                                <h3>Pending Assignments</h3>
+                                <h3>{CS.pendingHeading}</h3>
                                 {pending.map((a: Any) => (
-                                    <div key={a.id} style={{ marginBottom: 8 }}>
-                                        <button onClick={() => pickAssignment(a)}>
-                                            {a.relationship}: Evaluate {a.target.name}
+                                    <div key={a.id} style={{ marginBottom: 10 }}>
+                                        <button
+                                            onClick={() => pickAssignment(a)}
+                                            style={{
+                                                display: "block",
+                                                width: "100%",
+                                                padding: "14px 18px",
+                                                fontSize: 15,
+                                                textAlign: "left",
+                                                cursor: "pointer",
+                                                border: "1px solid #ccc",
+                                                borderRadius: 6,
+                                                background: "#fff",
+                                            }}
+                                        >
+                                            {CS.evaluate(
+                                                CS.rel[a.relationship] || a.relationship,
+                                                a.relationship === "SELF" ? CS.selfTarget : a.target.name,
+                                            )}
                                         </button>
                                     </div>
                                 ))}
@@ -332,14 +359,29 @@ export default function App() {
                             <>
                                 <h3 style={{ color: "#666" }}>{CS.completed}</h3>
                                 {completed.map((a: Any) => (
-                                    <div key={a.id} style={{ marginBottom: 4, color: "#999" }}>
-                                        ✓ {CS.rel[a.relationship] || a.relationship}: {a.target.name} — {CS.completed}
+                                    <div key={a.id} style={{
+                                        marginBottom: 6,
+                                        padding: "10px 18px",
+                                        fontSize: 14,
+                                        color: "#888",
+                                        background: "#f5f5f5",
+                                        borderRadius: 6,
+                                        border: "1px solid #e0e0e0",
+                                    }}>
+                                        ✓ {CS.rel[a.relationship] || a.relationship}: {a.relationship === "SELF" ? CS.selfTarget : a.target.name} — {CS.completed}
                                     </div>
                                 ))}
                             </>
                         )}
                     </>
                 )}
+
+                <button
+                    onClick={() => { setToken(""); setProjects([]); setProject(null); setAssignments([]); }}
+                    style={{ marginTop: 24, padding: "10px 20px", fontSize: 14 }}
+                >
+                    {CS.logout}
+                </button>
             </div>
         );
     }

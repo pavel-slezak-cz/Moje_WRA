@@ -37,6 +37,7 @@ adminRoutes.post("/versions/:id/items/reorder", admin.reorderItems);
 adminRoutes.get("/projects", admin.listProjects);
 adminRoutes.post("/projects", admin.createProject);
 adminRoutes.get("/projects/:id", admin.getProject);
+adminRoutes.patch("/projects/:id", admin.updateProject);
 adminRoutes.delete("/projects/:id", admin.deleteProject);
 adminRoutes.post("/projects/:id/participants", admin.addProjectParticipant);
 

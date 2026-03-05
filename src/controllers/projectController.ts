@@ -54,6 +54,7 @@ export async function list(req: Request, res: Response, next: NextFunction) {
                 id: true,
                 name: true,
                 description: true,
+                introText: true,
                 createdAt: true,
                 instrumentVersion: {
                     select: {
