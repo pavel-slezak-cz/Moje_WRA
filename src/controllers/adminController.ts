@@ -17,6 +17,8 @@ import {
     updateProjectSchema,
     addParticipantByEmailSchema,
     createAssignmentSchema,
+    setUserRoleSchema,
+    grantStaffAccessSchema,
 } from "../middleware/validate";
 import { hashPassword } from "../utils/hash";
 
@@ -26,6 +28,7 @@ export async function getConfig(req: Request, res: Response, next: NextFunction)
     try {
         const email = req.user!.email;
         sendSuccess(res, {
+            role: req.user!.role,
             inspectorEnabled: isInspectorAllowed(email),
         });
     } catch (err) {
@@ -293,8 +296,12 @@ export async function reorderItems(req: Request, res: Response, next: NextFuncti
 
 export async function listProjects(req: Request, res: Response, next: NextFunction) {
     try {
+        const where = req.user!.role === "SUPERUSER"
+            ? {}
+            : { staffAccess: { some: { userId: req.user!.userId } } };
+
         const projects = await prisma.project.findMany({
-            where: { ownerUserId: req.user!.userId },
+            where,
             select: {
                 id: true,
                 name: true,
@@ -348,7 +355,7 @@ export async function createProject(req: Request, res: Response, next: NextFunct
 
 export async function getProject(req: Request, res: Response, next: NextFunction) {
     try {
-        const id = parseInt(req.params.id as string, 10);
+        const id = parseInt(req.params.projectId as string, 10);
         if (isNaN(id)) { sendError(res, "Invalid ID", 400, "INVALID_ID"); return; }
 
         const project = await prisma.project.findUnique({
@@ -374,9 +381,6 @@ export async function getProject(req: Request, res: Response, next: NextFunction
             },
         });
         if (!project) { sendError(res, "Project not found", 404, "NOT_FOUND"); return; }
-        if (project.ownerUserId !== req.user!.userId) {
-            sendError(res, "Not project owner", 403, "INSUFFICIENT_ROLE"); return;
-        }
         sendSuccess(res, project);
     } catch (err) {
         next(err);
@@ -385,16 +389,13 @@ export async function getProject(req: Request, res: Response, next: NextFunction
 
 export async function updateProject(req: Request, res: Response, next: NextFunction) {
     try {
-        const id = parseInt(req.params.id as string, 10);
+        const id = parseInt(req.params.projectId as string, 10);
         if (isNaN(id)) { sendError(res, "Invalid ID", 400, "INVALID_ID"); return; }
 
+        const data = updateProjectSchema.parse(req.body);
         const project = await prisma.project.findUnique({ where: { id } });
         if (!project) { sendError(res, "Project not found", 404, "NOT_FOUND"); return; }
-        if (project.ownerUserId !== req.user!.userId) {
-            sendError(res, "Not project owner", 403, "INSUFFICIENT_ROLE"); return;
-        }
 
-        const data = updateProjectSchema.parse(req.body);
         const updated = await prisma.project.update({ where: { id }, data });
         sendSuccess(res, updated);
     } catch (err) {
@@ -404,14 +405,11 @@ export async function updateProject(req: Request, res: Response, next: NextFunct
 
 export async function deleteProject(req: Request, res: Response, next: NextFunction) {
     try {
-        const id = parseInt(req.params.id as string, 10);
+        const id = parseInt(req.params.projectId as string, 10);
         if (isNaN(id)) { sendError(res, "Invalid ID", 400, "INVALID_ID"); return; }
 
         const project = await prisma.project.findUnique({ where: { id } });
         if (!project) { sendError(res, "Project not found", 404, "NOT_FOUND"); return; }
-        if (project.ownerUserId !== req.user!.userId) {
-            sendError(res, "Not project owner", 403, "INSUFFICIENT_ROLE"); return;
-        }
 
         await prisma.$transaction(async (tx) => {
             // Collect response IDs for this project
@@ -467,19 +465,16 @@ export async function deleteItem(req: Request, res: Response, next: NextFunction
 
 export async function listAssignments(req: Request, res: Response, next: NextFunction) {
     try {
-        const projectId = parseInt(req.params.id as string, 10);
+        const projectId = parseInt(req.params.projectId as string, 10);
         if (isNaN(projectId)) { sendError(res, "Invalid ID", 400, "INVALID_ID"); return; }
 
         const project = await prisma.project.findUnique({ where: { id: projectId } });
         if (!project) { sendError(res, "Project not found", 404, "NOT_FOUND"); return; }
-        if (project.ownerUserId !== req.user!.userId) {
-            sendError(res, "Not project owner", 403, "INSUFFICIENT_ROLE"); return;
-        }
 
         const assignments = await prisma.evaluationAssignment.findMany({
             where: { projectId },
             include: {
-                evaluator: { select: { id: true, email: true, name: true } },
+                respondent: { select: { id: true, email: true, name: true } },
                 target: { select: { id: true, email: true, name: true } },
                 response: { select: { id: true, createdAt: true } },
             },
@@ -493,29 +488,25 @@ export async function listAssignments(req: Request, res: Response, next: NextFun
 
 export async function createAssignment(req: Request, res: Response, next: NextFunction) {
     try {
-        const projectId = parseInt(req.params.id as string, 10);
+        const projectId = parseInt(req.params.projectId as string, 10);
         if (isNaN(projectId)) { sendError(res, "Invalid ID", 400, "INVALID_ID"); return; }
         const data = createAssignmentSchema.parse(req.body);
 
-        // Verify ownership
         const project = await prisma.project.findUnique({ where: { id: projectId } });
         if (!project) { sendError(res, "Project not found", 404, "NOT_FOUND"); return; }
-        if (project.ownerUserId !== req.user!.userId) {
-            sendError(res, "Not project owner", 403, "INSUFFICIENT_ROLE"); return;
-        }
 
-        // SELF constraint: evaluator must equal target
-        if (data.relationship === "SELF" && data.evaluatorUserId !== data.targetUserId) {
-            sendError(res, "SELF assignments require evaluator and target to be the same user", 400, "INVALID_SELF_ASSIGNMENT");
+        // SELF constraint: respondent must equal target
+        if (data.relationship === "SELF" && data.respondentUserId !== data.targetUserId) {
+            sendError(res, "SELF assignments require respondent and target to be the same user", 400, "INVALID_SELF_ASSIGNMENT");
             return;
         }
 
         // Both users must be project participants
-        const evaluatorParticipant = await prisma.projectParticipant.findUnique({
-            where: { projectId_userId: { projectId, userId: data.evaluatorUserId } },
+        const respondentParticipant = await prisma.projectParticipant.findUnique({
+            where: { projectId_userId: { projectId, userId: data.respondentUserId } },
         });
-        if (!evaluatorParticipant) {
-            sendError(res, "Evaluator is not a participant in this project", 400, "NOT_PARTICIPANT");
+        if (!respondentParticipant) {
+            sendError(res, "Respondent is not a participant in this project", 400, "NOT_PARTICIPANT");
             return;
         }
         const targetParticipant = await prisma.projectParticipant.findUnique({
@@ -529,12 +520,12 @@ export async function createAssignment(req: Request, res: Response, next: NextFu
         const assignment = await prisma.evaluationAssignment.create({
             data: {
                 projectId,
-                evaluatorUserId: data.evaluatorUserId,
+                respondentUserId: data.respondentUserId,
                 targetUserId: data.targetUserId,
                 relationship: data.relationship,
             },
             include: {
-                evaluator: { select: { id: true, email: true, name: true } },
+                respondent: { select: { id: true, email: true, name: true } },
                 target: { select: { id: true, email: true, name: true } },
             },
         });
@@ -551,12 +542,22 @@ export async function deleteAssignment(req: Request, res: Response, next: NextFu
 
         const assignment = await prisma.evaluationAssignment.findUnique({
             where: { id },
-            include: { project: { select: { ownerUserId: true } }, response: { select: { id: true } } },
+            include: { response: { select: { id: true } } },
         });
         if (!assignment) { sendError(res, "Assignment not found", 404, "NOT_FOUND"); return; }
-        if (assignment.project.ownerUserId !== req.user!.userId) {
-            sendError(res, "Not project owner", 403, "INSUFFICIENT_ROLE"); return;
+
+        // STAFF must have project access (SUPERUSER passes via requireAdmin)
+        if (req.user!.role === "STAFF") {
+            const access = await prisma.projectStaffAccess.findUnique({
+                where: { userId_projectId: { userId: req.user!.userId, projectId: assignment.projectId } },
+                select: { id: true },
+            });
+            if (!access) {
+                sendError(res, "No admin access to this project", 403, "PROJECT_ADMIN_ACCESS_DENIED");
+                return;
+            }
         }
+
         if (assignment.response) {
             sendError(res, "This assignment has a completed response and cannot be deleted", 409, "HAS_RESPONSE");
             return;
@@ -571,7 +572,7 @@ export async function deleteAssignment(req: Request, res: Response, next: NextFu
 
 export async function addProjectParticipant(req: Request, res: Response, next: NextFunction) {
     try {
-        const projectId = parseInt(req.params.id as string, 10);
+        const projectId = parseInt(req.params.projectId as string, 10);
         if (isNaN(projectId)) { sendError(res, "Invalid ID", 400, "INVALID_ID"); return; }
         const parsed = addParticipantByEmailSchema.safeParse(req.body);
         if (!parsed.success) {
@@ -582,12 +583,8 @@ export async function addProjectParticipant(req: Request, res: Response, next: N
         }
         const data = parsed.data;
 
-        // Verify ownership
         const project = await prisma.project.findUnique({ where: { id: projectId } });
         if (!project) { sendError(res, "Project not found", 404, "NOT_FOUND"); return; }
-        if (project.ownerUserId !== req.user!.userId) {
-            sendError(res, "Not project owner", 403, "INSUFFICIENT_ROLE"); return;
-        }
 
         // Find or create user by email
         let user = await prisma.user.findUnique({ where: { email: data.email } });
@@ -611,6 +608,139 @@ export async function addProjectParticipant(req: Request, res: Response, next: N
             include: { user: { select: { id: true, email: true, name: true } } },
         });
         sendSuccess(res, participant, 201);
+    } catch (err) {
+        next(err);
+    }
+}
+
+// ── User Management (SUPERUSER only) ──
+
+export async function listUsers(_req: Request, res: Response, next: NextFunction) {
+    try {
+        const users = await prisma.user.findMany({
+            select: { id: true, email: true, name: true, role: true, createdAt: true },
+            orderBy: { email: "asc" },
+        });
+        sendSuccess(res, users);
+    } catch (err) {
+        next(err);
+    }
+}
+
+export async function setUserRole(req: Request, res: Response, next: NextFunction) {
+    try {
+        const id = parseInt(req.params.id as string, 10);
+        if (isNaN(id)) { sendError(res, "Invalid ID", 400, "INVALID_ID"); return; }
+        const data = setUserRoleSchema.parse(req.body);
+
+        const user = await prisma.user.findUnique({ where: { id } });
+        if (!user) { sendError(res, "User not found", 404, "NOT_FOUND"); return; }
+
+        // Prevent demoting yourself
+        if (id === req.user!.userId && data.role !== "SUPERUSER") {
+            sendError(res, "Cannot change your own role away from SUPERUSER", 400, "SELF_DEMOTION");
+            return;
+        }
+
+        const updated = await prisma.user.update({
+            where: { id },
+            data: { role: data.role },
+            select: { id: true, email: true, name: true, role: true },
+        });
+        sendSuccess(res, updated);
+    } catch (err) {
+        next(err);
+    }
+}
+
+// ── Project Staff Access (SUPERUSER only) ──
+
+export async function listProjectStaff(req: Request, res: Response, next: NextFunction) {
+    try {
+        const projectId = parseInt(req.params.projectId as string, 10);
+        if (isNaN(projectId)) { sendError(res, "Invalid ID", 400, "INVALID_ID"); return; }
+
+        const staffAccess = await prisma.projectStaffAccess.findMany({
+            where: { projectId },
+            include: { user: { select: { id: true, email: true, name: true, role: true } } },
+            orderBy: { createdAt: "asc" },
+        });
+        sendSuccess(res, staffAccess);
+    } catch (err) {
+        next(err);
+    }
+}
+
+export async function grantProjectStaff(req: Request, res: Response, next: NextFunction) {
+    try {
+        const projectId = parseInt(req.params.projectId as string, 10);
+        if (isNaN(projectId)) { sendError(res, "Invalid ID", 400, "INVALID_ID"); return; }
+        const data = grantStaffAccessSchema.parse(req.body);
+
+        const project = await prisma.project.findUnique({ where: { id: projectId } });
+        if (!project) { sendError(res, "Project not found", 404, "NOT_FOUND"); return; }
+
+        const user = await prisma.user.findUnique({ where: { id: data.userId } });
+        if (!user) { sendError(res, "User not found", 404, "NOT_FOUND"); return; }
+        if (user.role !== "STAFF") {
+            sendError(res, "User must have STAFF role to be granted project access", 400, "NOT_STAFF_ROLE");
+            return;
+        }
+
+        const access = await prisma.projectStaffAccess.create({
+            data: { userId: data.userId, projectId },
+            include: { user: { select: { id: true, email: true, name: true } } },
+        });
+        sendSuccess(res, access, 201);
+    } catch (err) {
+        next(err);
+    }
+}
+
+export async function revokeProjectStaff(req: Request, res: Response, next: NextFunction) {
+    try {
+        const projectId = parseInt(req.params.projectId as string, 10);
+        const userId = parseInt(req.params.userId as string, 10);
+        if (isNaN(projectId) || isNaN(userId)) { sendError(res, "Invalid ID", 400, "INVALID_ID"); return; }
+
+        const access = await prisma.projectStaffAccess.findUnique({
+            where: { userId_projectId: { userId, projectId } },
+        });
+        if (!access) { sendError(res, "Staff access not found", 404, "NOT_FOUND"); return; }
+
+        await prisma.projectStaffAccess.delete({
+            where: { userId_projectId: { userId, projectId } },
+        });
+        sendSuccess(res, { deleted: true });
+    } catch (err) {
+        next(err);
+    }
+}
+
+// ── Project Instrument (admin view) ──
+
+export async function getProjectInstrument(req: Request, res: Response, next: NextFunction) {
+    try {
+        const projectId = parseInt(req.params.projectId as string, 10);
+        if (isNaN(projectId)) { sendError(res, "Invalid ID", 400, "INVALID_ID"); return; }
+
+        const project = await prisma.project.findUnique({
+            where: { id: projectId },
+            include: {
+                instrumentVersion: {
+                    include: {
+                        instrument: { select: { id: true, name: true } },
+                        items: {
+                            orderBy: { position: "asc" },
+                            include: { construct: { select: { id: true, name: true } } },
+                        },
+                    },
+                },
+            },
+        });
+        if (!project) { sendError(res, "Project not found", 404, "NOT_FOUND"); return; }
+
+        sendSuccess(res, project.instrumentVersion);
     } catch (err) {
         next(err);
     }

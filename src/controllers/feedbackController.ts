@@ -60,7 +60,7 @@ export async function submitProjectResponse(req: Request, res: Response, next: N
                 sendError(res, "Assignment does not belong to this project", 400, "INVALID_ASSIGNMENT");
                 return;
             }
-            if (assignment.evaluatorUserId !== req.user!.userId) {
+            if (assignment.respondentUserId !== req.user!.userId) {
                 sendError(res, "This assignment is not assigned to you", 403, "NOT_ASSIGNED");
                 return;
             }

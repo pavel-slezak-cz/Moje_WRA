@@ -125,10 +125,9 @@ export default function App() {
     const [password, setPassword] = useState("heslo");
     const [userName, setUserName] = useState("");
 
-    const [projects, setProjects] = useState<Any[]>([]);
-    const [project, setProject] = useState<Any>(null);
-    const [assignments, setAssignments] = useState<Any[]>([]);
+    const [allAssignments, setAllAssignments] = useState<Any[]>([]);
     const [currentAssignment, setCurrentAssignment] = useState<Any>(null);
+    const [currentProject, setCurrentProject] = useState<Any>(null);
     const [instrument, setInstrument] = useState<Any>(null);
     const [strategy, setStrategy] = useState("");
 
@@ -146,53 +145,26 @@ export default function App() {
         if (!res.success) return setError(res.error.message);
         setToken(res.data.token);
         setUserName(res.data.user?.name || "");
-        const pRes = await api("/projects", res.data.token);
-        if (pRes.success) setProjects(pRes.data);
+        const aRes = await api("/me/assignments", res.data.token);
+        if (aRes.success) setAllAssignments(aRes.data);
     }
 
-    // ── Select project → load assignments ──
-    async function selectProject(p: Any) {
-        setProject(p);
-        setCurrentAssignment(null);
-        setInstrument(null);
-        setResult(null);
-        setWraAnswers({});
-        setAnswers360({});
-        setCurrentIndex(0);
-        setStrategy("");
-
-        const aRes = await api(`/projects/${p.id}/assignments`, token);
-        if (aRes.success) setAssignments(aRes.data);
-    }
-
-    // ── Pick assignment → load instrument ──
+    // ── Pick assignment → load instrument via /assignments/:id/instrument ──
     async function pickAssignment(a: Any) {
         setCurrentAssignment(a);
+        setCurrentProject(a.project);
         setResult(null);
         setWraAnswers({});
         setAnswers360({});
         setCurrentIndex(0);
         setStrategy("");
 
-        const res = await api(`/projects/${project.id}`, token);
+        const res = await api(`/assignments/${a.id}/instrument`, token);
         if (!res.success) return;
-        const ivId = res.data.instrumentVersionId;
 
-        const instrRes = await api("/instruments", token);
-        if (!instrRes.success) return;
-
-        for (const inst of instrRes.data) {
-            const ver = inst.versions?.find((v: Any) => v.id === ivId);
-            if (!ver) continue;
-
-            const full = await api(`/instruments/${inst.id}`, token);
-            if (!full.success) return;
-
-            setInstrument(full.data);
-            const v = full.data.versions?.find((vv: Any) => vv.id === ivId);
-            if (v) setStrategy(v.scoringStrategy || "");
-            return;
-        }
+        // Response: { id, versionNumber, scoringStrategy, instrument, items[], project }
+        setInstrument({ ...res.data.instrument, versions: [res.data] });
+        setStrategy(res.data.scoringStrategy || "");
     }
 
     // ── Submit ──
@@ -212,25 +184,15 @@ export default function App() {
 
         const body: Any = { items };
         if (currentAssignment) body.assignmentId = currentAssignment.id;
-        const res = await api(`/projects/${project.id}/responses`, token, body);
+        const projectId = currentAssignment?.project?.id ?? currentProject?.id;
+        const res = await api(`/projects/${projectId}/responses`, token, body);
         if (!res.success) return setError(res.error.message);
         setResult(res.data);
     }
 
-    function goBack() {
-        setProject(null);
-        setCurrentAssignment(null);
-        setAssignments([]);
-        setInstrument(null);
-        setResult(null);
-        setWraAnswers({});
-        setAnswers360({});
-        setCurrentIndex(0);
-        setStrategy("");
-    }
-
     async function backToAssignments() {
         setCurrentAssignment(null);
+        setCurrentProject(null);
         setInstrument(null);
         setResult(null);
         setWraAnswers({});
@@ -238,10 +200,8 @@ export default function App() {
         setCurrentIndex(0);
         setStrategy("");
         // Re-fetch to reflect newly completed assignments
-        if (project) {
-            const aRes = await api(`/projects/${project.id}/assignments`, token);
-            if (aRes.success) setAssignments(aRes.data);
-        }
+        const aRes = await api("/me/assignments", token);
+        if (aRes.success) setAllAssignments(aRes.data);
     }
 
     // ── Not logged in ──
@@ -280,104 +240,87 @@ export default function App() {
         );
     }
 
-    // ── Project selector ──
-    if (!project) {
-        return (
-            <div style={{ padding: 24, fontFamily: "monospace" }}>
-                <h2>Select Project</h2>
-                {projects.map((p: Any) => (
-                    <div key={p.id} style={{ marginBottom: 8 }}>
-                        <button onClick={() => selectProject(p)}>
-                            {p.name} — {p.instrumentVersion?.instrument?.name} v
-                            {p.instrumentVersion?.versionNumber}
-                        </button>
-                    </div>
-                ))}
-                <button
-                    onClick={() => {
-                        setToken("");
-                        setProjects([]);
-                    }}
-                    style={{ marginTop: 16 }}
-                >
-                    Logout
-                </button>
-            </div>
-        );
-    }
+    // ── Assignment selector (grouped by project) ──
+    if (!currentAssignment) {
+        // Group assignments by project
+        const byProject = new Map<number, { project: Any; assignments: Any[] }>();
+        for (const a of allAssignments) {
+            const pid = a.project.id;
+            if (!byProject.has(pid)) byProject.set(pid, { project: a.project, assignments: [] });
+            byProject.get(pid)!.assignments.push(a);
+        }
 
-    // ── Assignment picker ──
-    if (project && !currentAssignment) {
-        const pending = assignments.filter((a: Any) => !a.response);
-        const completed = assignments.filter((a: Any) => a.response);
         return (
             <div style={{ padding: 24, fontFamily: "monospace", maxWidth: 700 }}>
-                <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 16 }}>
-                    <h2 style={{ margin: 0 }}>{project.name}</h2>
-                    <button onClick={goBack}>← Projects</button>
-                </div>
+                <h2>Moje dotazníky</h2>
 
-                {project.introText && (
-                    <div style={{ padding: 14, background: "#f7f9fb", borderLeft: "3px solid #5b8cb8", borderRadius: 4, marginBottom: 20, fontSize: 14, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
-                        {project.introText}
-                    </div>
-                )}
-
-                {assignments.length === 0 ? (
+                {allAssignments.length === 0 ? (
                     <p>{CS.noAssignments}</p>
                 ) : (
-                    <>
-                        {pending.length > 0 && (
-                            <>
-                                <h3>{CS.pendingHeading}</h3>
-                                {pending.map((a: Any) => (
-                                    <div key={a.id} style={{ marginBottom: 10 }}>
-                                        <button
-                                            onClick={() => pickAssignment(a)}
-                                            style={{
-                                                display: "block",
-                                                width: "100%",
-                                                padding: "14px 18px",
-                                                fontSize: 15,
-                                                textAlign: "left",
-                                                cursor: "pointer",
-                                                border: "1px solid #ccc",
+                    [...byProject.values()].map(({ project: proj, assignments: projAssignments }) => {
+                        const pending = projAssignments.filter((a: Any) => !a.response);
+                        const completed = projAssignments.filter((a: Any) => a.response);
+                        return (
+                            <div key={proj.id} style={{ marginBottom: 24 }}>
+                                <h3 style={{ margin: "0 0 8px" }}>{proj.name}</h3>
+                                {proj.introText && (
+                                    <div style={{ padding: 14, background: "#f7f9fb", borderLeft: "3px solid #5b8cb8", borderRadius: 4, marginBottom: 12, fontSize: 14, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
+                                        {proj.introText}
+                                    </div>
+                                )}
+                                {pending.length > 0 && (
+                                    <>
+                                        <h4 style={{ margin: "0 0 6px" }}>{CS.pendingHeading}</h4>
+                                        {pending.map((a: Any) => (
+                                            <div key={a.id} style={{ marginBottom: 10 }}>
+                                                <button
+                                                    onClick={() => pickAssignment(a)}
+                                                    style={{
+                                                        display: "block",
+                                                        width: "100%",
+                                                        padding: "14px 18px",
+                                                        fontSize: 15,
+                                                        textAlign: "left",
+                                                        cursor: "pointer",
+                                                        border: "1px solid #ccc",
+                                                        borderRadius: 6,
+                                                        background: "#fff",
+                                                    }}
+                                                >
+                                                    {CS.evaluate(
+                                                        CS.rel[a.relationship] || a.relationship,
+                                                        a.relationship === "SELF" ? CS.selfTarget : a.target.name,
+                                                    )}
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </>
+                                )}
+                                {completed.length > 0 && (
+                                    <>
+                                        <h4 style={{ color: "#666", margin: "8px 0 4px" }}>{CS.completed}</h4>
+                                        {completed.map((a: Any) => (
+                                            <div key={a.id} style={{
+                                                marginBottom: 6,
+                                                padding: "10px 18px",
+                                                fontSize: 14,
+                                                color: "#888",
+                                                background: "#f5f5f5",
                                                 borderRadius: 6,
-                                                background: "#fff",
-                                            }}
-                                        >
-                                            {CS.evaluate(
-                                                CS.rel[a.relationship] || a.relationship,
-                                                a.relationship === "SELF" ? CS.selfTarget : a.target.name,
-                                            )}
-                                        </button>
-                                    </div>
-                                ))}
-                            </>
-                        )}
-                        {completed.length > 0 && (
-                            <>
-                                <h3 style={{ color: "#666" }}>{CS.completed}</h3>
-                                {completed.map((a: Any) => (
-                                    <div key={a.id} style={{
-                                        marginBottom: 6,
-                                        padding: "10px 18px",
-                                        fontSize: 14,
-                                        color: "#888",
-                                        background: "#f5f5f5",
-                                        borderRadius: 6,
-                                        border: "1px solid #e0e0e0",
-                                    }}>
-                                        ✓ {CS.rel[a.relationship] || a.relationship}: {a.relationship === "SELF" ? CS.selfTarget : a.target.name} — {CS.completed}
-                                    </div>
-                                ))}
-                            </>
-                        )}
-                    </>
+                                                border: "1px solid #e0e0e0",
+                                            }}>
+                                                ✓ {CS.rel[a.relationship] || a.relationship}: {a.relationship === "SELF" ? CS.selfTarget : a.target.name} — {CS.completed}
+                                            </div>
+                                        ))}
+                                    </>
+                                )}
+                            </div>
+                        );
+                    })
                 )}
 
                 <button
-                    onClick={() => { setToken(""); setProjects([]); setProject(null); setAssignments([]); }}
+                    onClick={() => { setToken(""); setAllAssignments([]); }}
                     style={{ marginTop: 24, padding: "10px 20px", fontSize: 14 }}
                 >
                     {CS.logout}
@@ -387,6 +330,7 @@ export default function App() {
     }
 
     // ── Instrument + questionnaire ──
+    const project = currentProject ?? currentAssignment?.project;
     const version = instrument?.versions?.[0];
     const isWRA = strategy === "WRA_ABSOLUTE_GAP";
     const is360 = strategy === "NORMATIVE_360";
@@ -410,7 +354,7 @@ export default function App() {
     return (
         <div style={{ padding: 24, fontFamily: "monospace", maxWidth: 700 }}>
             <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 16 }}>
-                <h2 style={{ margin: 0 }}>{project.name}</h2>
+                <h2 style={{ margin: 0 }}>{project?.name}</h2>
                 <span style={{ color: "#666" }}>{strategy ? `(${strategy})` : ""}</span>
                 <button onClick={backToAssignments}>← Assignments</button>
             </div>

@@ -14,8 +14,9 @@ export function errorHandler(err: any, _req: Request, res: Response, _next: Next
     // Prisma known errors (e.g. unique constraint)
     if (err?.name === "PrismaClientKnownRequestError") {
         if (err.code === "P2002") {
-            const field = err.meta?.target?.[0] || "field";
-            sendError(res, `A record with this ${field} already exists`, 409, "DUPLICATE_ENTRY");
+            const field = err.meta?.target?.[0];
+            if (field) console.warn(`P2002 duplicate on field: ${field}`);
+            sendError(res, "A record with this value already exists", 409, "DUPLICATE_ENTRY");
             return;
         }
         if (err.code === "P2025") {

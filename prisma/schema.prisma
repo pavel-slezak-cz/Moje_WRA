@@ -60,6 +60,12 @@ enum EvaluationRelationship {
   SUBORDINATE
 }
 
+enum UserRole {
+  SUPERUSER
+  STAFF
+  RESPONDENT
+}
+
 // ── Core user model ──
 
 model User {
@@ -67,14 +73,16 @@ model User {
   email        String             @unique
   passwordHash String             @map("password_hash")
   name         String
+  role         UserRole           @default(RESPONDENT)
   createdAt    DateTime           @default(now()) @map("created_at")
 
   legacyResponses        LegacyResponse[]
   instrumentResponses    InstrumentResponse[]
   ownedProjects          Project[]              @relation("ProjectOwner")
   participations         ProjectParticipant[]
-  assignmentsAsEvaluator EvaluationAssignment[] @relation("AssignmentEvaluator")
+  assignmentsAsRespondent EvaluationAssignment[] @relation("AssignmentRespondent")
   assignmentsAsTarget    EvaluationAssignment[] @relation("AssignmentTarget")
+  staffAccess            ProjectStaffAccess[]
 
   @@map("users")
 }
@@ -204,8 +212,24 @@ model Project {
   participants      ProjectParticipant[]
   responses         InstrumentResponse[]
   assignments       EvaluationAssignment[]
+  staffAccess       ProjectStaffAccess[]
 
   @@map("projects")
+}
+
+model ProjectStaffAccess {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  projectId Int      @map("project_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, projectId])
+  @@index([projectId])
+  @@index([userId])
+  @@map("project_staff_access")
 }
 
 model ProjectParticipant {
@@ -225,17 +249,17 @@ model ProjectParticipant {
 model EvaluationAssignment {
   id              Int                    @id @default(autoincrement())
   projectId       Int                    @map("project_id")
-  evaluatorUserId Int                    @map("evaluator_user_id")
+  respondentUserId Int                    @map("respondent_user_id")
   targetUserId    Int                    @map("target_user_id")
   relationship    EvaluationRelationship
   createdAt       DateTime               @default(now()) @map("created_at")
 
   project   Project            @relation(fields: [projectId], references: [id])
-  evaluator User               @relation("AssignmentEvaluator", fields: [evaluatorUserId], references: [id])
+  respondent User               @relation("AssignmentRespondent", fields: [respondentUserId], references: [id])
   target    User               @relation("AssignmentTarget", fields: [targetUserId], references: [id])
   response  InstrumentResponse?
 
-  @@unique([projectId, evaluatorUserId, targetUserId, relationship])
+  @@unique([projectId, respondentUserId, targetUserId, relationship])
   @@map("evaluation_assignments")
 }
 

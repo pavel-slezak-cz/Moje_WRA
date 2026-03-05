@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { authMiddleware } from "../middleware/auth";
-import { requireOwner } from "../middleware/adminGuard";
+import { requireAdmin, requireSuperuser, requireProjectAdminAccess } from "../middleware/adminGuard";
 import { inspectorGuard } from "../middleware/inspectorGuard";
 import * as admin from "../controllers/adminController";
 import * as inspector from "../controllers/inspectorController";
@@ -8,45 +8,55 @@ import * as inspector from "../controllers/inspectorController";
 export const adminRoutes = Router();
 
 adminRoutes.use(authMiddleware);
-adminRoutes.use(requireOwner);
+adminRoutes.use(requireAdmin);
 
 // ── Config ──
 adminRoutes.get("/config", admin.getConfig);
 
-// ── Instruments ──
+// ── Instruments (catalog read: requireAdmin; write: SUPERUSER) ──
 adminRoutes.get("/instruments", admin.listInstruments);
-adminRoutes.post("/instruments", admin.createInstrument);
-adminRoutes.patch("/instruments/:id", admin.updateInstrument);
+adminRoutes.post("/instruments", requireSuperuser, admin.createInstrument);
+adminRoutes.patch("/instruments/:id", requireSuperuser, admin.updateInstrument);
 
-// ── Versions ──
-adminRoutes.post("/instruments/:id/versions", admin.createVersion);
+// ── Versions (catalog read: requireAdmin; write: SUPERUSER) ──
+adminRoutes.post("/instruments/:id/versions", requireSuperuser, admin.createVersion);
 adminRoutes.get("/versions/:id", admin.getVersion);
-adminRoutes.post("/versions/:id/clone", admin.cloneVersion);
-adminRoutes.patch("/versions/:id", admin.updateVersion);
+adminRoutes.post("/versions/:id/clone", requireSuperuser, admin.cloneVersion);
+adminRoutes.patch("/versions/:id", requireSuperuser, admin.updateVersion);
 
-// ── Constructs ──
+// ── Constructs (catalog read: requireAdmin; write: SUPERUSER) ──
 adminRoutes.get("/constructs", admin.listConstructs);
-adminRoutes.post("/constructs", admin.createConstruct);
-adminRoutes.patch("/constructs/:id", admin.updateConstruct);
+adminRoutes.post("/constructs", requireSuperuser, admin.createConstruct);
+adminRoutes.patch("/constructs/:id", requireSuperuser, admin.updateConstruct);
 
-// ── Items ──
-adminRoutes.post("/versions/:id/items", admin.createItem);
-adminRoutes.patch("/items/:id", admin.updateItem);
-adminRoutes.delete("/items/:id", admin.deleteItem);
-adminRoutes.post("/versions/:id/items/reorder", admin.reorderItems);
+// ── Items (SUPERUSER only) ──
+adminRoutes.post("/versions/:id/items", requireSuperuser, admin.createItem);
+adminRoutes.patch("/items/:id", requireSuperuser, admin.updateItem);
+adminRoutes.delete("/items/:id", requireSuperuser, admin.deleteItem);
+adminRoutes.post("/versions/:id/items/reorder", requireSuperuser, admin.reorderItems);
 
-// ── Projects ──
+// ── Projects (list scoped in controller; project-scoped: requireProjectAdminAccess) ──
 adminRoutes.get("/projects", admin.listProjects);
-adminRoutes.post("/projects", admin.createProject);
-adminRoutes.get("/projects/:id", admin.getProject);
-adminRoutes.patch("/projects/:id", admin.updateProject);
-adminRoutes.delete("/projects/:id", admin.deleteProject);
-adminRoutes.post("/projects/:id/participants", admin.addProjectParticipant);
+adminRoutes.post("/projects", requireSuperuser, admin.createProject);
+adminRoutes.get("/projects/:projectId", requireProjectAdminAccess, admin.getProject);
+adminRoutes.patch("/projects/:projectId", requireProjectAdminAccess, admin.updateProject);
+adminRoutes.delete("/projects/:projectId", requireSuperuser, admin.deleteProject);
+adminRoutes.post("/projects/:projectId/participants", requireProjectAdminAccess, admin.addProjectParticipant);
+adminRoutes.get("/projects/:projectId/instrument", requireProjectAdminAccess, admin.getProjectInstrument);
 
 // ── Evaluation Assignments ──
-adminRoutes.get("/projects/:id/assignments", admin.listAssignments);
-adminRoutes.post("/projects/:id/assignments", admin.createAssignment);
+adminRoutes.get("/projects/:projectId/assignments", requireProjectAdminAccess, admin.listAssignments);
+adminRoutes.post("/projects/:projectId/assignments", requireProjectAdminAccess, admin.createAssignment);
 adminRoutes.delete("/assignments/:id", admin.deleteAssignment);
+
+// ── User Management (SUPERUSER only) ──
+adminRoutes.get("/users", requireSuperuser, admin.listUsers);
+adminRoutes.patch("/users/:id/role", requireSuperuser, admin.setUserRole);
+
+// ── Project Staff Access (SUPERUSER only) ──
+adminRoutes.get("/projects/:projectId/staff", requireSuperuser, admin.listProjectStaff);
+adminRoutes.post("/projects/:projectId/staff", requireSuperuser, admin.grantProjectStaff);
+adminRoutes.delete("/projects/:projectId/staff/:userId", requireSuperuser, admin.revokeProjectStaff);
 
 // ── DB Inspector (gated) ──
 adminRoutes.use("/inspector", inspectorGuard);

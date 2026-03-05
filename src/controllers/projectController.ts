@@ -112,7 +112,7 @@ export async function myAssignments(req: Request, res: Response, next: NextFunct
         const userId = req.user!.userId;
 
         const assignments = await prisma.evaluationAssignment.findMany({
-            where: { projectId, evaluatorUserId: userId },
+            where: { projectId, respondentUserId: userId },
             include: {
                 target: { select: { id: true, name: true, email: true } },
                 response: { select: { id: true, createdAt: true } },

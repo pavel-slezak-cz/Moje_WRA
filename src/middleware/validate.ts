@@ -157,9 +157,17 @@ export const addParticipantByEmailSchema = z.object({
 });
 
 export const createAssignmentSchema = z.object({
-    evaluatorUserId: z.number().int().positive("Evaluator user ID is required"),
+    respondentUserId: z.number().int().positive("Respondent user ID is required"),
     targetUserId: z.number().int().positive("Target user ID is required"),
     relationship: z.enum(["SELF", "MANAGER", "PEER", "SUBORDINATE"]),
+});
+
+export const setUserRoleSchema = z.object({
+    role: z.enum(["SUPERUSER", "STAFF", "RESPONDENT"]),
+});
+
+export const grantStaffAccessSchema = z.object({
+    userId: z.number().int().positive("User ID is required"),
 });
 
 // ── Generic validation middleware ──

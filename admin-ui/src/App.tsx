@@ -55,6 +55,7 @@ export default function App() {
     const [password, setPassword] = useState("heslo");
     const [error, setError] = useState("");
     const [screen, setScreen] = useState<Screen>("login");
+    const [userRole, setUserRole] = useState("");
     const [inspectorEnabled, setInspectorEnabled] = useState(false);
 
     // Data
@@ -74,15 +75,20 @@ export default function App() {
         setError("");
         const res = await api("/auth/login", undefined, { body: { email, password } });
         if (!res.success) return setError(res.error.message);
-        setToken(res.data.token);
         const cfg = await api("/admin/config", res.data.token);
-        if (cfg.success) setInspectorEnabled(cfg.data.inspectorEnabled);
+        if (!cfg.success) {
+            return setError("Přístup odmítnut — tento účet nemá oprávnění pro administraci.");
+        }
+        setToken(res.data.token);
+        setUserRole(cfg.data.role || "");
+        setInspectorEnabled(cfg.data.inspectorEnabled);
         setScreen("dashboard");
     }
 
     function logout() {
         setToken("");
         setScreen("login");
+        setUserRole("");
         setInspectorEnabled(false);
     }
 
@@ -179,7 +185,8 @@ export default function App() {
             <button onClick={() => setScreen("constructs")} style={S.btn}>Constructs</button>
             <button onClick={() => setScreen("projects")} style={S.btn}>Projects</button>
             {inspectorEnabled && <button onClick={() => setScreen("inspector")} style={S.btn}>🔍 DB Inspector</button>}
-            <button onClick={logout} style={{ ...S.btn, marginLeft: "auto" }}>Logout</button>
+            <span style={{ marginLeft: "auto", fontSize: 12, color: "#888" }}>{userRole}</span>
+            <button onClick={logout} style={S.btn}>Logout</button>
         </div>
     );
 
@@ -362,7 +369,7 @@ export default function App() {
                         <tbody>
                         {assignments.map((a: Any) => (
                             <tr key={a.id}>
-                                <td>{a.evaluator.name}</td>
+                                <td>{a.respondent.name}</td>
                                 <td>{a.target.name}</td>
                                 <td>{REL_DIRECTION[a.relationship] || a.relationship}</td>
                                 <td>{a.response ? `✓ Response #${a.response.id}` : "Pending"}</td>
@@ -371,7 +378,7 @@ export default function App() {
                                         <button
                                             style={{ color: "#a00" }}
                                             onClick={async () => {
-                                                if (!confirm(`Delete assignment: ${a.evaluator.name} → ${a.target.name} (${a.relationship})?`)) return;
+                                            if (!confirm(`Delete assignment: ${a.respondent.name} → ${a.target.name} (${a.relationship})?`)) return;
                                                 const res = await api(`/admin/assignments/${a.id}`, token, { method: "DELETE" });
                                                 if (res.success) reloadAssignments(p.id);
                                                 else alert(res.error.message);
@@ -798,7 +805,7 @@ function CreateAssignmentForm({ token, projectId, participants, onCreated }: { t
         if (isNaN(tId)) return setErr("Select target");
         if (!relationship) return setErr("Select relationship");
         const res = await api(`/admin/projects/${projectId}/assignments`, token, {
-            body: { evaluatorUserId: eId, targetUserId: tId, relationship },
+            body: { respondentUserId: eId, targetUserId: tId, relationship },
         });
         if (!res.success) return setErr(res.error.message);
         setEvaluatorId(""); setTargetId(""); setRelationship(""); onCreated();
